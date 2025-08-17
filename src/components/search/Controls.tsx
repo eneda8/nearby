@@ -1,7 +1,7 @@
 'use client';
 import { useState } from 'react';
 
-export type TravelMode = 'WALK' | 'BICYCLE' | 'DRIVE';
+export type TravelMode = 'WALK'  | 'DRIVE';
 
 const MILE_OPTIONS = [0.5, 1, 2, 3, 5, 10, 15, 25];
 
@@ -46,7 +46,7 @@ export default function Controls({
       <div className="flex items-center gap-2">
         <span className="text-sm">Mode</span>
         <div className="flex gap-2">
-          {(['WALK', 'BICYCLE', 'DRIVE'] as const).map((m) => (
+          {(['WALK', 'DRIVE'] as const).map((m) => (
             <button
               key={m}
               type="button"
