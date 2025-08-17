@@ -190,7 +190,7 @@ export default function HomePage() {
       <section>
         <MapView
           center={center}
-          origin={center}
+          radiusMeters={radiusMeters}
           markers={markers}
           selectedId={selectedId}
           onMarkerClick={(id: string) => setSelectedId(id)}

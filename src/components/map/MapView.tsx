@@ -2,140 +2,162 @@
 import { useEffect, useRef, useState } from 'react';
 import { Loader } from '@googlemaps/js-api-loader';
 
-type MarkerInput = {
-  id: string;
-  position: { lat: number; lng: number };
-  label?: string;
-  link?: string; // Google Maps URL if available
-};
+type LatLng = google.maps.LatLngLiteral;
+type Marker = { id: string; position: LatLng; label?: string; link?: string };
 
 interface MapViewProps {
-  center: { lat: number; lng: number };
-  zoom?: number;
-  markers?: MarkerInput[];
+  center: LatLng;
+  radiusMeters?: number;
+  markers?: Marker[];
   selectedId?: string | null;
   onMarkerClick?: (id: string) => void;
-  origin?: { lat: number; lng: number }; // show a distinct pin for the searched address
-}
-
-function buildInfoHtml(mk: MarkerInput) {
-  const title = mk.label ?? '';
-  const linkHtml = mk.link
-    ? `<a href="${mk.link}" target="_blank" rel="noreferrer">Open in Google Maps</a>`
-    : '';
-  return `
-    <div style="max-width:220px">
-      <div style="font-weight:600;margin-bottom:4px">${title}</div>
-      ${linkHtml}
-    </div>
-  `;
 }
 
 export default function MapView({
   center,
-  zoom = 14,
+  radiusMeters,
   markers = [],
-  selectedId = null,
+  selectedId,
   onMarkerClick,
-  origin,
 }: MapViewProps) {
-  const mapRef = useRef<HTMLDivElement | null>(null);
-  const [map, setMap] = useState<google.maps.Map | null>(null);
-  const markerRefs = useRef<Array<{ id: string; marker: google.maps.Marker; data: MarkerInput }>>([]);
-  const infoRef = useRef<google.maps.InfoWindow | null>(null);
+  const divRef = useRef<HTMLDivElement | null>(null);
+  const mapRef = useRef<google.maps.Map | null>(null);
+  const circleRef = useRef<google.maps.Circle | null>(null);
   const originRef = useRef<google.maps.Marker | null>(null);
+  const markerRefs = useRef<Map<string, google.maps.Marker>>(new Map());
+  const [ready, setReady] = useState(false);
 
-  // init map once
+  // Single loader (must match AddressInput options exactly)
   useEffect(() => {
     const loader = new Loader({
       apiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY!,
       version: 'weekly',
       libraries: ['places'],
+      id: '__googleMapsScriptId',
     });
 
-    let mounted = true;
+    let cancelled = false;
     loader.load().then(() => {
-      if (!mounted || !mapRef.current) return;
-      const m = new google.maps.Map(mapRef.current, {
+      if (cancelled || !divRef.current) return;
+
+      const map = new google.maps.Map(divRef.current, {
         center,
-        zoom,
+        zoom: 14,
         streetViewControl: false,
         fullscreenControl: false,
         mapTypeControl: false,
       });
-      setMap(m);
-      infoRef.current = new google.maps.InfoWindow();
-    });
-    return () => {
-      mounted = false;
-    };
-  }, []);
+      mapRef.current = map;
 
-  // keep center in sync
-  useEffect(() => {
-    if (map) map.setCenter(center);
-  }, [center, map]);
-
-  // render/update the ORIGIN marker
-  useEffect(() => {
-    if (!map || !origin) return;
-    // remove previous origin marker
-    if (originRef.current) originRef.current.setMap(null);
-
-    originRef.current = new google.maps.Marker({
-      position: origin,
-      map,
-      zIndex: 9999,
-      icon: {
-        path: google.maps.SymbolPath.CIRCLE,
+      // Origin marker (kept simple; high zIndex so it stays visible)
+      originRef.current = new google.maps.Marker({
+        position: center,
+        map,
+        title: 'Origin',
+        clickable: false,
+        zIndex: 9999,
+        icon: {
+          path: google.maps.SymbolPath.CIRCLE,
         scale: 8,
         fillColor: '#1a73e8',
         fillOpacity: 1,
         strokeColor: '#ffffff',
         strokeWeight: 2,
-      },
-      title: 'Start',
-    });
-  }, [map, origin]);
+        }
+      });
 
-  // (re)render result markers
-  useEffect(() => {
-    if (!map) return;
-
-    // clear old markers
-    markerRefs.current.forEach(({ marker }) => marker.setMap(null));
-    markerRefs.current = [];
-
-    markers.forEach((mk) => {
-      const marker = new google.maps.Marker({
-        position: mk.position,
+      // Radius circle
+      circleRef.current = new google.maps.Circle({
         map,
-        title: mk.label,
+        center,
+        radius: radiusMeters ?? 0,
+        strokeColor: '#2563eb',
+        strokeOpacity: 0.7,
+        strokeWeight: 2,
+        fillColor: '#3b82f6',
+        fillOpacity: 0.12,
+        clickable: false,
       });
 
-      marker.addListener('click', () => {
-        if (!infoRef.current) return;
-        infoRef.current.setContent(buildInfoHtml(mk));
-        infoRef.current.open({ map, anchor: marker });
-        onMarkerClick?.(mk.id);
-      });
-
-      markerRefs.current.push({ id: mk.id, marker, data: mk });
+      setReady(true);
     });
-  }, [markers, map, onMarkerClick]);
 
-  // open info bubble when a list item selects a marker
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Keep origin + circle synced and ALWAYS fit to radius when it changes
   useEffect(() => {
-    if (!map || !selectedId) return;
-    const entry = markerRefs.current.find((m) => m.id === selectedId);
-    if (!entry) return;
-    const { marker, data } = entry;
-    map.panTo(marker.getPosition()!);
-    if (infoRef.current) {
-      infoRef.current.setContent(buildInfoHtml(data));
-      infoRef.current.open({ map, anchor: marker });
-    }
-  }, [selectedId, map]);
+    if (!ready || !mapRef.current) return;
 
-  return <div ref={mapRef} className="w-full rounded-2xl border" style={{ height: '60vh' }} />;
+    mapRef.current.setCenter(center);
+    originRef.current?.setPosition(center);
+
+    if (!circleRef.current) {
+      circleRef.current = new google.maps.Circle({
+        map: mapRef.current,
+        center,
+        radius: radiusMeters ?? 0,
+        strokeColor: '#2563eb',
+        strokeOpacity: 0.7,
+        strokeWeight: 2,
+        fillColor: '#3b82f6',
+        fillOpacity: 0.12,
+        clickable: false,
+      });
+    } else {
+      circleRef.current.setCenter(center);
+      circleRef.current.setRadius(radiusMeters ?? 0);
+    }
+
+    // Fit viewport to the circle (padding so the stroke isn’t glued to the edge)
+    if (radiusMeters && radiusMeters > 0) {
+      const b = circleRef.current.getBounds();
+      if (b) mapRef.current.fitBounds(b, 48);
+    }
+  }, [ready, center, radiusMeters]);
+
+  // POI markers (no style changes)
+  useEffect(() => {
+    if (!ready || !mapRef.current) return;
+
+    // remove markers no longer present
+    for (const [id, mk] of markerRefs.current.entries()) {
+      if (!markers.find((m) => m.id === id)) {
+        mk.setMap(null);
+        markerRefs.current.delete(id);
+      }
+    }
+
+    // add/update markers
+    markers.forEach((m) => {
+      let mk = markerRefs.current.get(m.id);
+      if (!mk) {
+        mk = new google.maps.Marker({
+          position: m.position,
+          map: mapRef.current!,
+          title: m.label,
+        });
+        if (onMarkerClick) mk.addListener('click', () => onMarkerClick(m.id));
+        markerRefs.current.set(m.id, mk);
+      } else {
+        mk.setPosition(m.position);
+        mk.setTitle(m.label ?? '');
+      }
+    });
+  }, [ready, markers, onMarkerClick]);
+
+  // very light “selected” pulse only (no hover, no scroll)
+  useEffect(() => {
+    if (!ready) return;
+    markerRefs.current.forEach((mk) => mk.setAnimation(null));
+    if (selectedId) {
+      const mk = markerRefs.current.get(selectedId);
+      mk?.setAnimation(google.maps.Animation.BOUNCE);
+      setTimeout(() => mk?.setAnimation(null), 700);
+    }
+  }, [ready, selectedId]);
+
+  return <div ref={divRef} className="w-full h-[60vh] rounded-2xl border" />;
 }
