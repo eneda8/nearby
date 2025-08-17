@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 const API_KEY = process.env.GOOGLE_MAPS_API_KEY_SERVER;
-
 type TravelMode = 'WALK' | 'BICYCLE' | 'DRIVE';
 
 export async function POST(req: NextRequest) {
@@ -14,9 +13,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body = {
-      origins: [
-        { waypoint: { location: { latLng: { latitude: origin.lat, longitude: origin.lng } } } },
-      ],
+      origins: [{ waypoint: { location: { latLng: { latitude: origin.lat, longitude: origin.lng } } } }],
       destinations: destinations.map((d: any) => ({
         waypoint: { location: { latLng: { latitude: d.lat, longitude: d.lng } } },
       })),
@@ -28,26 +25,34 @@ export async function POST(req: NextRequest) {
       headers: {
         'Content-Type': 'application/json',
         'X-Goog-Api-Key': API_KEY,
-        'X-Goog-FieldMask': [
-          'originIndex',
-          'destinationIndex',
-          'duration',
-          'distanceMeters',
-          'condition',
-          'status',
-        ].join(','),
+        'X-Goog-FieldMask':
+          'originIndex,destinationIndex,duration,distanceMeters,status,condition',
       },
       body: JSON.stringify(body),
     });
 
+    const text = await resp.text();
+
     if (!resp.ok) {
-      const text = await resp.text();
-      return NextResponse.json({ error: 'Route Matrix error', details: text }, { status: 502 });
+      return NextResponse.json({ error: 'Route Matrix error', details: text }, { status: resp.status });
     }
 
-    const rows = await resp.json();
-    // rows is an array of elements; each has destinationIndex
-    const elements = Array.isArray(rows) ? rows : rows.elements || [];
+    let elements: any[] = [];
+    const t = text.trim();
+
+    if (t.startsWith('{') || t.startsWith('[')) {
+      // plain JSON (object with elements OR array)
+      const parsed = JSON.parse(t);
+      elements = Array.isArray(parsed) ? parsed : parsed.elements ?? [];
+    } else {
+      // NDJSON or SSE "data: {...}" lines
+      elements = t
+        .split('\n')
+        .map((ln) => ln.trim())
+        .filter((ln) => ln.length > 0)
+        .map((ln) => (ln.startsWith('data:') ? ln.slice(5).trim() : ln))
+        .map((ln) => JSON.parse(ln));
+    }
 
     return NextResponse.json({ elements });
   } catch (err: any) {
