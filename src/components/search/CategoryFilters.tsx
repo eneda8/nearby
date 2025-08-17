@@ -1,60 +1,64 @@
 'use client';
 
-export type CategoryKey =
-  | 'groceries'
-  | 'restaurants'
-  | 'cafes'
-  | 'gas'
-  | 'pharmacies'
-  | 'shopping'
-  | 'parks'
-  | 'gyms';
+import { useState } from 'react';
+import { CATEGORIES, type CatKey } from '@/lib/categories';
 
-// Map a friendly category to Google Places (New) includedTypes
-export const CATEGORY_TYPES: Record<CategoryKey, string[]> = {
-  groceries: ['grocery_store', 'supermarket', 'convenience_store'],
-  restaurants: ['restaurant'],
-  cafes: ['cafe', 'coffee_shop'],
-  gas: ['gas_station'],
-  pharmacies: ['pharmacy'],
-  shopping: ['shopping_mall', 'department_store', 'clothing_store'],
-  parks: ['park'],
-  gyms: ['gym', 'fitness_center'],
-};
-
-const CATEGORY_LABELS: Record<CategoryKey, string> = {
-  groceries: 'Grocery stores',
-  restaurants: 'Restaurants',
-  cafes: 'Cafés',
-  gas: 'Gas stations',
-  pharmacies: 'Pharmacies',
-  shopping: 'Shopping',
-  parks: 'Parks',
-  gyms: 'Gyms',
-};
+const VISIBLE_PARENTS = 8;
 
 export default function CategoryFilters({
-  value,
-  onChange,
+  parent,
+  sub,
+  onParent,
+  onSub,
 }: {
-  value: CategoryKey;
-  onChange: (key: CategoryKey) => void;
+  parent: CatKey;
+  sub: string;
+  onParent: (k: CatKey) => void;
+  onSub: (subKey: string) => void;
 }) {
-  const keys = Object.keys(CATEGORY_LABELS) as CategoryKey[];
+  const [showMore, setShowMore] = useState(false);
+  const current = CATEGORIES.find((c) => c.key === parent) ?? CATEGORIES[0];
+
+  const parents = showMore ? CATEGORIES : CATEGORIES.slice(0, VISIBLE_PARENTS);
+
   return (
-    <div className="flex flex-wrap gap-2">
-      {keys.map((k) => (
-        <button
-          key={k}
-          type="button"
-          onClick={() => onChange(k)}
-          className={`h-9 px-3 rounded-full border ${
-            value === k ? 'bg-foreground text-background' : 'bg-background'
-          }`}
-        >
-          {CATEGORY_LABELS[k]}
-        </button>
-      ))}
+    <div className="space-y-2">
+      {/* parent row */}
+      <div className="flex flex-wrap gap-2 items-center">
+        {parents.map((c) => (
+          <button
+            key={c.key}
+            type="button"
+            onClick={() => onParent(c.key)}
+            className={`h-9 px-3 rounded-full border ${c.key === parent ? 'bg-foreground text-background' : 'bg-background'}`}
+          >
+            {c.label}
+          </button>
+        ))}
+        {CATEGORIES.length > VISIBLE_PARENTS && (
+          <button
+            type="button"
+            className="h-9 px-3 rounded-full border bg-background"
+            onClick={() => setShowMore((s) => !s)}
+          >
+            {showMore ? 'Less' : 'More'}
+          </button>
+        )}
+      </div>
+
+      {/* sub row */}
+      <div className="flex flex-wrap gap-2">
+        {current.subs.map((s) => (
+          <button
+            key={s.key}
+            type="button"
+            onClick={() => onSub(s.key)}
+            className={`h-8 px-3 rounded-full border ${s.key === sub ? 'bg-foreground text-background' : 'bg-background'}`}
+          >
+            {s.label}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
