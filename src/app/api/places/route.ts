@@ -27,8 +27,10 @@ export async function POST(req: NextRequest) {
     if (typeof lat !== 'number' || typeof lng !== 'number' || typeof radiusMeters !== 'number') {
       return NextResponse.json({ error: 'lat, lng, radiusMeters required' }, { status: 400 });
     }
-
-    // If no filters were chosen, default to something reasonable
+    
+    if (!Array.isArray(includedTypes) || includedTypes.length === 0) {
+      return NextResponse.json({ error: 'includedTypes required' }, { status: 400 });
+    }
     const types: string[] =
       Array.isArray(includedTypes) && includedTypes.length ? includedTypes : ['grocery_store'];
 
@@ -39,6 +41,8 @@ export async function POST(req: NextRequest) {
         circle: { center: { latitude: lat, longitude: lng }, radius: radiusMeters },
       },
     };
+
+    console.log('includedTypes sent:', includedTypes);
 
     const resp = await fetch('https://places.googleapis.com/v1/places:searchNearby', {
       method: 'POST',
@@ -51,6 +55,7 @@ export async function POST(req: NextRequest) {
           'places.formattedAddress',
           'places.location',
           'places.primaryType',
+          'places.types',
           'places.rating',
           'places.userRatingCount',
           'places.googleMapsUri',
@@ -65,8 +70,17 @@ export async function POST(req: NextRequest) {
     }
 
     const data = await resp.json();
-    const places = (data.places || []).map((p: any) => {
-      // Location can be {latLng:{latitude,longitude}} (new API)
+    const raw: any[] = Array.isArray(data.places) ? data.places : [];
+
+    // Strict post-filter: require primaryType to be one of the selected types
+    const typeSet = new Set<string>(types);
+    const filtered = raw.filter((p) => {
+      const primary: string | undefined = p.primaryType;
+      if (!typeSet.size) return true;
+      return primary ? typeSet.has(primary) : false;
+    });
+
+    const places = filtered.map((p: any) => {
       const ll = p.location?.latLng ?? p.location;
       const position = {
         lat: Number(ll?.latitude ?? ll?.lat ?? 0),

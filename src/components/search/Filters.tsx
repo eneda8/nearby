@@ -3,20 +3,9 @@
 import { useMemo, useState } from 'react';
 import { CATEGORIES, type CatKey } from '@/lib/categories';
 
-export type Selection = { parent: CatKey; subKey: string }; // 'all' means the parent's All
+export type Selection = { parent: CatKey; subKey: string };
 
-const QUICK_PARENTS: CatKey[] = [
-  'groceries',
-  'restaurants',
-  'financial',
-  'medical',
-  'shopping',
-  'nature',
-  'lodging',
-  'transport',
-];
-
-const MAX_SELECTIONS = 3;
+const VISIBLE_PARENTS = 8;
 
 export default function Filters({
   selections,
@@ -25,208 +14,148 @@ export default function Filters({
   selections: Selection[];
   onChange: (next: Selection[]) => void;
 }) {
+  const [parent, setParent] = useState<CatKey>(CATEGORIES[0].key);
   const [showMore, setShowMore] = useState(false);
-  const [activeParent, setActiveParent] = useState<CatKey | null>(null);
 
-  const selectedMap = useMemo(() => {
-    const m = new Map<CatKey, string>();
-    selections.forEach((s) => m.set(s.parent, s.subKey));
-    return m;
-  }, [selections]);
+  const current = useMemo(
+    () => CATEGORIES.find((c) => c.key === parent) ?? CATEGORIES[0],
+    [parent]
+  );
 
-  function toggleParentAll(parent: CatKey) {
-    const has = selectedMap.has(parent);
-    if (has) {
-      onChange(selections.filter((s) => s.parent !== parent));
+  const parentList = showMore ? CATEGORIES : CATEGORIES.slice(0, VISIBLE_PARENTS);
+
+  const isSelected = (p: CatKey, subKey: string) =>
+    selections.some((s) => s.parent === p && s.subKey === subKey);
+
+  // When changing parent: keep only that parent's selections.
+  // If none exist yet for that parent, default to "all".
+  function handleParentClick(next: CatKey) {
+    setParent(next);
+    const forNext = selections.filter((s) => s.parent === next);
+    if (forNext.length > 0) {
+      if (forNext.length !== selections.length) onChange(forNext);
     } else {
-      if (selections.length >= MAX_SELECTIONS) return; // cap
-      onChange([...selections, { parent, subKey: 'all' }]);
-      setActiveParent(parent);
+      onChange([{ parent: next, subKey: 'all' }]);
     }
   }
 
-  function setSub(parent: CatKey, subKey: string) {
-    // ensure the parent exists; if not, add (respect cap)
-    const exists = selections.find((s) => s.parent === parent);
-    if (!exists) {
-      if (selections.length >= MAX_SELECTIONS) return;
-      onChange([...selections, { parent, subKey }]);
+  function toggleSub(parentKey: CatKey, subKey: string) {
+    const isAll = subKey === 'all';
+
+    // Split selections by parent
+    const keepOthers = selections.filter((s) => s.parent !== parentKey);
+    const currentForParent = selections.filter((s) => s.parent === parentKey);
+
+    if (isAll) {
+      // "All" toggles on/off and is exclusive within the parent
+      const hasAll = currentForParent.some((s) => s.subKey === 'all');
+      onChange(hasAll ? keepOthers : [...keepOthers, { parent: parentKey, subKey: 'all' }]);
       return;
     }
-    onChange(
-      selections.map((s) => (s.parent === parent ? { parent, subKey } : s))
-    );
+
+    // Clicking a specific sub removes "all" and toggles that sub
+    const withoutAll = currentForParent.filter((s) => s.subKey !== 'all');
+    const already = withoutAll.some((s) => s.subKey === subKey);
+
+    const nextForParent = already
+      ? withoutAll.filter((s) => s.subKey !== subKey)
+      : [...withoutAll, { parent: parentKey, subKey }];
+
+    onChange([...keepOthers, ...nextForParent]);
   }
 
-  function removeSelection(parent: CatKey) {
-    onChange(selections.filter((s) => s.parent !== parent));
+  function removeSelection(sel: Selection) {
+    onChange(selections.filter((s) => !(s.parent === sel.parent && s.subKey === sel.subKey)));
   }
 
-  // UI helpers
-  const activeCategory = activeParent
-    ? CATEGORIES.find((c) => c.key === activeParent)
-    : null;
+  function clearAll() {
+    onChange([]);
+  }
+
+  const selectedTokens = useMemo(() => {
+    return selections
+      .map((s) => {
+        const cat = CATEGORIES.find((c) => c.key === s.parent);
+        if (!cat) return null;
+        const sub = cat.subs.find((x) => x.key === s.subKey);
+        const label = sub?.label ?? s.subKey;
+        return { ...s, label };
+      })
+      .filter(Boolean) as Array<Selection & { label: string }>;
+  }, [selections]);
 
   return (
     <div className="space-y-3">
-      {/* Selected tokens */}
+      {/* Parent chips */}
+      <div className="flex flex-wrap gap-2 items-center">
+        {parentList.map((c) => (
+          <button
+            key={c.key}
+            type="button"
+            onClick={() => handleParentClick(c.key)}
+            className={`h-10 px-4 rounded-full border transition ${
+              c.key === parent ? 'bg-foreground text-background' : 'bg-background'
+            }`}
+          >
+            {c.label}
+          </button>
+        ))}
+        {CATEGORIES.length > VISIBLE_PARENTS && (
+          <button
+            type="button"
+            onClick={() => setShowMore((s) => !s)}
+            className="h-10 px-4 rounded-full border bg-background"
+          >
+            {showMore ? 'Less' : 'More'}
+          </button>
+        )}
+      </div>
+
+      {/* Sub chips for current parent */}
       <div className="flex flex-wrap gap-2">
-        {selections.map((s) => {
-          const cat = CATEGORIES.find((c) => c.key === s.parent)!;
-          const sub = cat.subs.find((x) => x.key === s.subKey);
-          const label = sub ? `${sub.label}` : 'All';
-        return (
+        {current.subs.map((s) => (
+          <button
+            key={s.key}
+            type="button"
+            onClick={() => toggleSub(current.key, s.key)}
+            className={`h-10 px-4 rounded-full border transition ${
+              isSelected(current.key, s.key) ? 'bg-foreground text-background' : 'bg-background'
+            }`}
+          >
+            {s.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Selected tokens */}
+      {selectedTokens.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm opacity-60 mr-1">SELECTED</span>
+          {selectedTokens.map((t) => (
             <span
-              key={`${s.parent}:${s.subKey}`}
-              className="inline-flex items-center gap-2 text-sm px-2.5 py-1 rounded-full border"
+              key={`${t.parent}:${t.subKey}`}
+              className="inline-flex items-center gap-2 h-9 px-3 rounded-full border bg-background"
             >
-              {cat.label}: {label}
+              {t.label}
               <button
                 type="button"
-                aria-label="Remove"
                 className="opacity-70 hover:opacity-100"
-                onClick={() => removeSelection(s.parent)}
+                onClick={() => removeSelection(t)}
+                aria-label={`Remove ${t.label}`}
               >
                 ×
               </button>
             </span>
-          );
-        })}
-        {/* Selection cap hint */}
-        {selections.length >= MAX_SELECTIONS && (
-          <span className="text-xs opacity-70">
-            (Max {MAX_SELECTIONS} filters)
-          </span>
-        )}
-      </div>
-
-      {/* Quick parent chips + More */}
-      <div className="flex flex-wrap gap-2 items-center">
-        {QUICK_PARENTS.map((k) => {
-          const cat = CATEGORIES.find((c) => c.key === k)!;
-          const isOn = selectedMap.has(k);
-          return (
-            <button
-              key={k}
-              type="button"
-              onClick={() => {
-                toggleParentAll(k);
-                setActiveParent(k);
-              }}
-              className={`h-9 px-3 rounded-full border ${
-                isOn ? 'bg-foreground text-background' : 'bg-background'
-              }`}
-            >
-              {cat.label}
-            </button>
-          );
-        })}
-
-        <button
-          type="button"
-          onClick={() => setShowMore(true)}
-          className="h-9 px-3 rounded-full border bg-background"
-        >
-          More{selections.length ? ` (${selections.length})` : ''}
-        </button>
-      </div>
-
-      {/* Subchips – only when a parent is active */}
-      {activeCategory && (
-        <div className="flex flex-wrap gap-2">
-          {activeCategory.subs.map((s) => {
-            const isSel = selectedMap.get(activeCategory.key) === s.key;
-            return (
-              <button
-                key={s.key}
-                type="button"
-                onClick={() => setSub(activeCategory.key, s.key)}
-                className={`h-8 px-3 rounded-full border ${
-                  isSel ? 'bg-foreground text-background' : 'bg-background'
-                }`}
-              >
-                {s.label}
-              </button>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Drawer (simple overlay panel) */}
-      {showMore && (
-        <div
-          className="fixed inset-0 z-50"
-          aria-modal="true"
-          role="dialog"
-          onClick={() => setShowMore(false)}
-        >
-          <div className="absolute inset-0 bg-black/30" />
-          <div
-            className="absolute right-0 top-0 h-full w-[min(420px,90vw)] bg-background shadow-xl p-4 overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
+          ))}
+          <button
+            type="button"
+            onClick={clearAll}
+            className="ml-2 h-9 px-3 rounded-full border bg-background"
           >
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-lg font-medium">Choose categories</h3>
-              <button
-                className="h-8 w-8 rounded-md border"
-                onClick={() => setShowMore(false)}
-                aria-label="Close"
-              >
-                ×
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              {CATEGORIES.map((cat) => {
-                const isQuick = QUICK_PARENTS.includes(cat.key);
-                return (
-                  <div key={cat.key} className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div className="font-medium">{cat.label}</div>
-                      <label className="text-sm flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={selectedMap.has(cat.key)}
-                          onChange={() => toggleParentAll(cat.key)}
-                        />
-                        <span>All</span>
-                      </label>
-                    </div>
-
-                    {/* Show subs only if this parent is selected */}
-                    {selectedMap.has(cat.key) && (
-                      <div className="flex flex-wrap gap-2">
-                        {cat.subs.map((s) => {
-                          const on = selectedMap.get(cat.key) === s.key;
-                          return (
-                            <button
-                              key={s.key}
-                              type="button"
-                              className={`h-8 px-3 rounded-full border ${
-                                on
-                                  ? 'bg-foreground text-background'
-                                  : 'bg-background'
-                              }`}
-                              onClick={() => setSub(cat.key, s.key)}
-                            >
-                              {s.label}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-
-            <div className="mt-6 text-sm opacity-70">
-              You can pick up to {MAX_SELECTIONS} filters. Close to apply.
-            </div>
-          </div>
+            Clear all
+          </button>
         </div>
       )}
     </div>
   );
 }
-

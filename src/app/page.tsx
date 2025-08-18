@@ -23,7 +23,7 @@ export default function HomePage() {
   // Filters (multi-select Option A)
   const [selections, setSelections] = useState<Selection[]>([]);
   const includedTypes = useMemo(() => {
-    if (!selections.length) return POPULAR_TYPES;
+    if (!selections.length) return [];   // let server default kick in
     const all = selections.flatMap((sel) => {
       const cat = CATEGORIES.find((c) => c.key === sel.parent);
       const sub = cat?.subs.find((s) => s.key === sel.subKey) ?? cat?.subs[0];
