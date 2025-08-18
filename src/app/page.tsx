@@ -8,13 +8,16 @@ import ResultsList, { PlaceItem } from '@/components/search/ResultsList';
 import Filters, { type Selection } from '@/components/search/Filters';
 import { CATEGORIES, POPULAR_TYPES } from '@/lib/categories';
 
+const DEV_ORIGIN = process.env.NEXT_PUBLIC_DEV_ORIGIN
+  ? process.env.NEXT_PUBLIC_DEV_ORIGIN.split(',').map(Number)
+  : null;
+
 export default function HomePage() {
   // Map origin/center (set after user picks an address)
-  const [center, setCenter] = useState<{ lat: number; lng: number }>({
-    lat: 40.7128,
-    lng: -74.006,
-  });
-  const [haveOrigin, setHaveOrigin] = useState(false);
+  const [center, setCenter] = useState<{lat:number;lng:number}>(
+  DEV_ORIGIN ? { lat: DEV_ORIGIN[0], lng: DEV_ORIGIN[1] } : { lat: 40.7128, lng: -74.006 }
+  );
+  const [haveOrigin, setHaveOrigin] = useState<boolean>(!!DEV_ORIGIN);
 
   // Controls
   const [radiusMeters, setRadiusMeters] = useState(1609.344); // 1 mile
