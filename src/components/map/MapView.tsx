@@ -2,32 +2,69 @@
 import { useEffect, useRef, useState } from 'react';
 import { Loader } from '@googlemaps/js-api-loader';
 
-type LatLng = google.maps.LatLngLiteral;
-type Marker = { id: string; position: LatLng; label?: string; link?: string };
+type Marker = {
+  id: string;
+  position: google.maps.LatLngLiteral;
+  label?: string;
+  link?: string;
+};
 
 interface MapViewProps {
-  center: LatLng;
+  center: google.maps.LatLngLiteral;
   radiusMeters?: number;
   markers?: Marker[];
   selectedId?: string | null;
   onMarkerClick?: (id: string) => void;
 }
 
+/** Compute a zoom level so that a circle of `radiusMeters`
+ * fits inside the smaller map dimension with some margin.
+ */
+function setZoomForRadius(
+  map: google.maps.Map,
+  center: google.maps.LatLngLiteral,
+  radiusMeters: number,
+  marginRatio = 0.9 // 90% of the smaller dimension (tweak if you want tighter/looser)
+) {
+  if (!radiusMeters || radiusMeters <= 0) {
+    map.setCenter(center);
+    return;
+  }
+  const div = map.getDiv() as HTMLElement;
+  const w = div.clientWidth || 800;
+  const h = div.clientHeight || 600;
+  const sizePx = Math.min(w, h) * marginRatio; // pixels available for the DIAMETER
+
+  // meters per pixel we want
+  const mpp = (2 * radiusMeters) / sizePx;
+
+  // meters/pixel at zoom 0 at this latitude
+  const latRad = (center.lat * Math.PI) / 180;
+  const mppAtZoom0 = 156543.03392 * Math.cos(latRad);
+
+  let z = Math.log2(mppAtZoom0 / mpp);
+  // clamp to sane Google zooms
+  z = Math.max(2, Math.min(21, z));
+
+  map.setCenter(center);
+  map.setZoom(z);
+}
+
 export default function MapView({
   center,
-  radiusMeters,
+  radiusMeters = 0,
   markers = [],
   selectedId,
   onMarkerClick,
 }: MapViewProps) {
-  const divRef = useRef<HTMLDivElement | null>(null);
+  const mapDivRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
-  const circleRef = useRef<google.maps.Circle | null>(null);
   const originRef = useRef<google.maps.Marker | null>(null);
+  const circleRef = useRef<google.maps.Circle | null>(null);
   const markerRefs = useRef<Map<string, google.maps.Marker>>(new Map());
-  const [ready, setReady] = useState(false);
+  const [apiReady, setApiReady] = useState(false);
 
-  // Single loader (must match AddressInput options exactly)
+  // Single loader; must match AddressInput options
   useEffect(() => {
     const loader = new Loader({
       apiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY!,
@@ -38,48 +75,41 @@ export default function MapView({
 
     let cancelled = false;
     loader.load().then(() => {
-      if (cancelled || !divRef.current) return;
+      if (cancelled || !mapDivRef.current) return;
 
-      const map = new google.maps.Map(divRef.current, {
+      const map = new google.maps.Map(mapDivRef.current, {
         center,
         zoom: 14,
         streetViewControl: false,
         fullscreenControl: false,
         mapTypeControl: false,
+        zoomControl: true,
       });
       mapRef.current = map;
 
-      // Origin marker (kept simple; high zIndex so it stays visible)
+      // origin pin (default red pin—you already differentiated elsewhere if needed)
       originRef.current = new google.maps.Marker({
         position: center,
         map,
-        title: 'Origin',
-        clickable: false,
-        zIndex: 9999,
-        icon: {
-          path: google.maps.SymbolPath.CIRCLE,
-        scale: 8,
-        fillColor: '#1a73e8',
-        fillOpacity: 1,
-        strokeColor: '#ffffff',
-        strokeWeight: 2,
-        }
       });
 
-      // Radius circle
+      // radius circle
       circleRef.current = new google.maps.Circle({
         map,
-        center,
-        radius: radiusMeters ?? 0,
         strokeColor: '#2563eb',
         strokeOpacity: 0.7,
         strokeWeight: 2,
         fillColor: '#3b82f6',
         fillOpacity: 0.12,
+        center,
+        radius: radiusMeters,
         clickable: false,
       });
 
-      setReady(true);
+      // initial zoom to radius
+      setZoomForRadius(map, center, radiusMeters);
+
+      setApiReady(true);
     });
 
     return () => {
@@ -87,42 +117,45 @@ export default function MapView({
     };
   }, []);
 
-  // Keep origin + circle synced and ALWAYS fit to radius when it changes
+  // Keep origin, circle, and zoom synced
   useEffect(() => {
-    if (!ready || !mapRef.current) return;
+    if (!apiReady || !mapRef.current) return;
 
-    mapRef.current.setCenter(center);
     originRef.current?.setPosition(center);
 
     if (!circleRef.current) {
       circleRef.current = new google.maps.Circle({
         map: mapRef.current,
-        center,
-        radius: radiusMeters ?? 0,
         strokeColor: '#2563eb',
         strokeOpacity: 0.7,
         strokeWeight: 2,
         fillColor: '#3b82f6',
         fillOpacity: 0.12,
+        center,
+        radius: radiusMeters,
         clickable: false,
       });
     } else {
       circleRef.current.setCenter(center);
-      circleRef.current.setRadius(radiusMeters ?? 0);
+      circleRef.current.setRadius(radiusMeters);
     }
 
-    // Fit viewport to the circle (padding so the stroke isn’t glued to the edge)
-    if (radiusMeters && radiusMeters > 0) {
-      const b = circleRef.current.getBounds();
-      if (b) mapRef.current.fitBounds(b, 48);
-    }
-  }, [ready, center, radiusMeters]);
+    setZoomForRadius(mapRef.current, center, radiusMeters);
+  }, [apiReady, center, radiusMeters]);
 
-  // POI markers (no style changes)
+  // Recompute zoom on window resize so the circle stays snug
   useEffect(() => {
-    if (!ready || !mapRef.current) return;
+    if (!apiReady || !mapRef.current) return;
+    const handler = () => setZoomForRadius(mapRef.current!, center, radiusMeters);
+    window.addEventListener('resize', handler);
+    return () => window.removeEventListener('resize', handler);
+  }, [apiReady, center, radiusMeters]);
 
-    // remove markers no longer present
+  // Render/update/remove POI markers
+  useEffect(() => {
+    if (!apiReady || !mapRef.current) return;
+
+    // remove stale markers
     for (const [id, mk] of markerRefs.current.entries()) {
       if (!markers.find((m) => m.id === id)) {
         mk.setMap(null);
@@ -146,18 +179,7 @@ export default function MapView({
         mk.setTitle(m.label ?? '');
       }
     });
-  }, [ready, markers, onMarkerClick]);
+  }, [apiReady, markers, onMarkerClick]);
 
-  // very light “selected” pulse only (no hover, no scroll)
-  useEffect(() => {
-    if (!ready) return;
-    markerRefs.current.forEach((mk) => mk.setAnimation(null));
-    if (selectedId) {
-      const mk = markerRefs.current.get(selectedId);
-      mk?.setAnimation(google.maps.Animation.BOUNCE);
-      setTimeout(() => mk?.setAnimation(null), 700);
-    }
-  }, [ready, selectedId]);
-
-  return <div ref={divRef} className="w-full h-[60vh] rounded-2xl border" />;
+  return <div ref={mapDivRef} className="w-full h-[60vh] rounded-2xl border" />;
 }
