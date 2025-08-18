@@ -54,6 +54,8 @@ export default function HomePage() {
     if (!haveOrigin) return;
     const controller = new AbortController();
 
+    if(!includedTypes?.length) return;
+    
     (async () => {
       try {
         setLoading(true);
