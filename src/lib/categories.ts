@@ -24,6 +24,7 @@ export type CatMap = {
     // For compatibility with the current page.tsx, these are the exact types
     // we pass through as `includedTypes` to the backend.
     types: string[];
+    brandNames?: string[];
   }>;
 }[];
 
@@ -47,10 +48,8 @@ export const CATEGORIES: CatMap = [
       // STRICT groceries (primary-only filtering happens server-side)
       { key: 'groceries', label: 'Groceries', types: ['grocery_store', 'supermarket'] },
       { key: 'convenience', label: 'Convenience', types: ['convenience_store'] },
-      // Pet stores (generic for now; brand-only variant can be added later)
-      { key: 'pet', label: 'Pet Stores', types: ['pet_store'] },
-      // Print/Ship: we’ll show USPS by type; brand add-ons (UPS/FedEx/Staples) can come later via Text Search
-      { key: 'print_ship', label: 'Print/Ship', types: ['post_office'] },
+      // Print/Ship: we’ll show USPS by type; brand add-ons (UPS/FedEx/OfficeDepot/OfficeMax) via Text Search
+      { key: 'print_ship', label: 'Print/Ship', types: ['post_office'], brandNames: ['The UPS Store', 'FedEx', 'OfficeDepot', 'OfficeMax', 'Staples'] },
       { key: 'pharmacy', label: 'Pharmacy', types: ['pharmacy', 'drugstore'] },
       { key: 'gas', label: 'Gas & EV', types: ['gas_station', 'electric_vehicle_charging_station'] },
       { key: 'bank', label: 'ATM/Bank', types: ['atm', 'bank'] },

@@ -5,7 +5,7 @@ import { CATEGORIES, type CatKey } from '@/lib/categories';
 
 export type Selection = { parent: CatKey; subKey: string };
 
-const VISIBLE_PARENTS = 8;
+const VISIBLE_PARENTS = 4;
 
 export default function Filters({
   selections,
@@ -14,11 +14,12 @@ export default function Filters({
   selections: Selection[];
   onChange: (next: Selection[]) => void;
 }) {
-  const [parent, setParent] = useState<CatKey>(CATEGORIES[0].key);
+  // No parent selected by default
+  const [parent, setParent] = useState<CatKey | null>(null);
   const [showMore, setShowMore] = useState(false);
 
   const current = useMemo(
-    () => CATEGORIES.find((c) => c.key === parent) ?? CATEGORIES[0],
+    () => (parent ? CATEGORIES.find((c) => c.key === parent) : null),
     [parent]
   );
 
@@ -28,17 +29,21 @@ export default function Filters({
     selections.some((s) => s.parent === p && s.subKey === subKey);
 
   // When changing parent: keep only that parent's selections.
-  // If none exist yet, default to the FIRST sub (not "all").
+  // If none exist yet, do not auto-select any subcategory.
   function handleParentClick(next: CatKey) {
+    if (parent === next) {
+      setParent(null);
+      onChange([]);
+      return;
+    }
     setParent(next);
     const forNext = selections.filter((s) => s.parent === next);
     if (forNext.length > 0) {
       if (forNext.length !== selections.length) onChange(forNext);
       return;
     }
-    const cat = CATEGORIES.find((c) => c.key === next);
-    const firstSub = cat?.subs[0]?.key;
-    if (firstSub) onChange([{ parent: next, subKey: firstSub }]);
+    // Do not auto-select any subcategory
+    onChange([]);
   }
 
   function toggleSub(parentKey: CatKey, subKey: string) {
@@ -59,6 +64,7 @@ export default function Filters({
 
   function clearAll() {
     onChange([]);
+    setParent(null);
   }
 
   const selectedTokens = useMemo(() => {
@@ -100,21 +106,23 @@ export default function Filters({
         )}
       </div>
 
-      {/* Sub chips for current parent */}
-      <div className="flex flex-wrap gap-2">
-        {current.subs.map((s) => (
-          <button
-            key={s.key}
-            type="button"
-            onClick={() => toggleSub(current.key, s.key)}
-            className={`h-10 px-4 rounded-full border transition ${
-              isSelected(current.key, s.key) ? 'bg-foreground text-background' : 'bg-background'
-            }`}
-          >
-            {s.label}
-          </button>
-        ))}
-      </div>
+      {/* Sub chips for current parent (only show if parent is selected) */}
+      {parent && current && (
+        <div className="flex flex-wrap gap-2">
+          {current.subs.map((s) => (
+            <button
+              key={s.key}
+              type="button"
+              onClick={() => toggleSub(current.key, s.key)}
+              className={`h-10 px-4 rounded-full border transition ${
+                isSelected(current.key, s.key) ? 'bg-foreground text-background' : 'bg-background'
+              }`}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Selected tokens */}
       {selectedTokens.length > 0 && (
@@ -143,6 +151,13 @@ export default function Filters({
           >
             Clear all
           </button>
+        </div>
+      )}
+
+      {/* Message if nothing is selected */}
+      {(!parent || selectedTokens.length === 0) && (
+        <div className="text-sm opacity-70 mt-2">
+          Select a radius and category to see what's nearby this address.
         </div>
       )}
     </div>
