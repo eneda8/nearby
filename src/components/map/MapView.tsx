@@ -87,10 +87,21 @@ export default function MapView({
       });
       mapRef.current = map;
 
-      // origin pin (default red pin—you already differentiated elsewhere if needed)
+      // origin pin (blue dot)
       originRef.current = new google.maps.Marker({
         position: center,
         map,
+        title: 'Origin',
+        clickable: false,
+        zIndex: 9999,
+        icon: {
+          path: google.maps.SymbolPath.CIRCLE,
+          scale: 8,
+          fillColor: '#1a73e8',
+          fillOpacity: 1,
+          strokeColor: '#ffffff',
+          strokeWeight: 2,
+        }
       });
 
       // radius circle

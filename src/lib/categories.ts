@@ -1,173 +1,168 @@
+// src/lib/categories.ts
+// Table A-only types for Nearby Search (New). Client still sends `includedTypes` from these.
+// We keep "Specialty Markets" under Food & Drink; Groceries is strict (primary only).
+
 export type CatKey =
-  | 'groceries' | 'restaurants' | 'financial' | 'transport' | 'medical'
-  | 'schools' | 'worship' | 'shopping' | 'nature' | 'lodging'
-  | 'attractions' | 'entertainment' | 'libraries';
+  | 'essentials'
+  | 'food_drink'
+  | 'shopping'
+  | 'things_to_do'
+  | 'services'
+  | 'lodging'
+  | 'transport'
+  | 'health'
+  | 'education'
+  | 'government'
+  | 'worship';
 
-export interface Subcat {
-  key: string;
-  label: string;
-  types: string[];         // Google Places (New) includedTypes
-}
-
-export interface Category {
+export type CatMap = {
   key: CatKey;
   label: string;
-  subs: Subcat[];
-}
+  subs: Array<{
+    key: string;
+    label: string;
+    // For compatibility with the current page.tsx, these are the exact types
+    // we pass through as `includedTypes` to the backend.
+    types: string[];
+  }>;
+}[];
 
-// Helper: “All” = union of all subs in that category
-const allOf = (...subs: Subcat[]): Subcat => ({
-  key: 'all',
-  label: 'All',
-  types: Array.from(new Set(subs.flatMap(s => s.types))),
-});
+// When no selection yet, show a few broadly useful types
+export const POPULAR_TYPES: string[] = [
+  'grocery_store',
+  'supermarket',
+  'restaurant',
+  'cafe',
+  'coffee_shop',
+  'park',
+  'pharmacy',
+  'gas_station',
+];
 
-export const CATEGORIES: Category[] = [
+export const CATEGORIES: CatMap = [
   {
-    key: 'groceries',
-    label: 'Groceries',
-    subs: (() => {
-      const supermarket = { key: 'supermarket', label: 'Supermarket', types: ['supermarket'] };
-      const grocery     = { key: 'grocery',     label: 'Grocery store', types: ['grocery_store'] };
-      const convenience = { key: 'convenience', label: 'Convenience',   types: ['convenience_store'] };
-      const liquor      = { key: 'liquor',      label: 'Liquor',        types: ['liquor_store'] };
-      // Supercenters (Walmart/Target) don’t have a perfect type; department_store is a decent proxy.
-      const supercenter = { key: 'supercenter', label: 'Supercenter',   types: ['department_store'] };
-      return [allOf(supermarket, grocery, convenience, liquor, supercenter), supermarket, grocery, convenience, liquor, supercenter];
-    })(),
-  },
-  {
-    key: 'restaurants',
-    label: 'Restaurants',
-    subs: (() => {
-      const sitdown  = { key: 'sitdown',  label: 'Sit-down', types: ['restaurant'] };
-      const fastFood    = { key: 'fast_food',   label: 'Fast food',       types: ['fast_food_restaurant'] };
-      const cafe        = { key: 'cafe',        label: 'Café',            types: ['cafe','coffee_shop'] };
-      const bakery      = { key: 'bakery',      label: 'Bakery',          types: ['bakery'] };
-      const bar         = { key: 'bar',         label: 'Bar',             types: ['bar'] };
-      const dessert     = { key: 'dessert',     label: 'Ice cream/Dessert', types: ['ice_cream_shop'] };
-      return [allOf(sitdown, fastFood, cafe, bakery, bar, dessert), sitdown, fastFood, cafe, bakery, bar, dessert];
-    })(),
-  },
-  {
-    key: 'financial',
-    label: 'ATMs & Banks',
+    key: 'essentials',
+    label: 'Essentials',
     subs: [
-      { key: 'all',    label: 'All',     types: ['bank','atm','currency_exchange','money_transfer'] },
-      { key: 'bank',   label: 'Banks',   types: ['bank'] },
-      { key: 'atm',    label: 'ATMs',    types: ['atm'] },
+      // STRICT groceries (primary-only filtering happens server-side)
+      { key: 'groceries', label: 'Groceries', types: ['grocery_store', 'supermarket'] },
+      { key: 'convenience', label: 'Convenience', types: ['convenience_store'] },
+      // Pet stores (generic for now; brand-only variant can be added later)
+      { key: 'pet', label: 'Pet Stores', types: ['pet_store'] },
+      // Print/Ship: we’ll show USPS by type; brand add-ons (UPS/FedEx/Staples) can come later via Text Search
+      { key: 'print_ship', label: 'Print/Ship', types: ['post_office'] },
+      { key: 'pharmacy', label: 'Pharmacy', types: ['pharmacy', 'drugstore'] },
+      { key: 'gas', label: 'Gas & EV', types: ['gas_station', 'electric_vehicle_charging_station'] },
+      { key: 'bank', label: 'ATM/Bank', types: ['atm', 'bank'] },
     ],
   },
   {
-    key: 'transport',
-    label: 'Transport',
+    key: 'food_drink',
+    label: 'Food & Drink',
     subs: [
-      { key: 'all',   label: 'All',    types: ['airport','train_station','bus_station'] },
-      { key: 'air',   label: 'Airports', types: ['airport'] },
-      { key: 'train', label: 'Train',    types: ['train_station'] },
-      { key: 'bus',   label: 'Bus',      types: ['bus_station'] },
-    ],
-  },
-  {
-    key: 'medical',
-    label: 'Medical',
-    subs: [
-      { key: 'all',   label: 'All',      types: ['hospital','doctor','pharmacy'] },
-      { key: 'hospital', label: 'Hospitals', types: ['hospital'] },
-      { key: 'clinic',   label: 'Doctor/Clinic', types: ['doctor'] },
-      // Urgent care may vary by region; we’ll add when verified or via text search fallback.
-      { key: 'pharmacy', label: 'Pharmacies', types: ['pharmacy'] },
-    ],
-  },
-  {
-    key: 'schools',
-    label: 'Schools',
-    subs: [
-      { key: 'all',     label: 'All',     types: ['primary_school','secondary_school','school','university'] },
-      { key: 'k12',     label: 'K–12',    types: ['primary_school','secondary_school','school'] },
-      { key: 'highered',label: 'Higher ed', types: ['university'] },
-      // Trade/vocational varies; start with 'school' umbrella.
-    ],
-  },
-  {
-    key: 'worship',
-    label: 'Worship',
-    subs: [
-      { key: 'all',   label: 'All', types: ['place_of_worship','church','mosque','synagogue','hindu_temple','buddhist_temple'] },
-      { key: 'church', label: 'Church',  types: ['church'] },
-      { key: 'mosque', label: 'Mosque',  types: ['mosque'] },
-      { key: 'synagogue', label: 'Synagogue', types: ['synagogue'] },
+      { key: 'restaurants', label: 'Restaurants', types: ['restaurant', 'fast_food_restaurant'] },
+      { key: 'cafes', label: 'Cafés', types: ['cafe', 'coffee_shop'] },
+      {
+        key: 'dessert',
+        label: 'Dessert',
+        types: ['bakery', 'ice_cream_shop', 'dessert_shop', 'donut_shop', 'candy_store', 'chocolate_shop'],
+      },
+      // Specialty Markets stays here; backend applies a specialty-only heuristic
+      { key: 'specialty_markets', label: 'Specialty Markets', types: ['asian_grocery_store', 'butcher_shop', 'food_store', 'market'] },
+      { key: 'bars', label: 'Bars', types: ['bar', 'pub', 'wine_bar'] },
     ],
   },
   {
     key: 'shopping',
     label: 'Shopping',
     subs: [
-      { key: 'all',     label: 'All', types: ['shopping_mall','department_store','clothing_store','shoe_store','book_store','electronics_store','furniture_store','home_goods_store','pet_store','sporting_goods_store','thrift_store'] },
-      { key: 'mall',    label: 'Malls', types: ['shopping_mall'] },
-      { key: 'dept',    label: 'Department', types: ['department_store'] },
-      // { key: 'thrift',  label: 'Thrift/Discount', types: ['thrift_store'] }, // add 'discount_store' later if needed
-      { key: 'furniture', label: 'Furniture', types: ['furniture_store','home_goods_store'] },
-      { key: 'beauty',  label: 'Beauty', types: ['beauty_salon'] }, // placeholder; refine later
-      { key: 'specialty', label: 'Specialty', types: ['book_store','pet_store','shoe_store','sporting_goods_store','electronics_store'] },
+      { key: 'malls_plazas', label: 'Malls & Plazas', types: ['shopping_mall', 'plaza'] },
+      { key: 'clothing_accessories', label: 'Clothing & Accessories', types: ['clothing_store', 'shoe_store', 'jewelry_store'] },
+      { key: 'electronics', label: 'Electronics', types: ['electronics_store', 'cell_phone_store'] },
+      { key: 'home_housewares', label: 'Home & Housewares', types: ['home_goods_store', 'home_improvement_store', 'furniture_store', 'hardware_store'] },
+      { key: 'books_gifts', label: 'Books & Gifts', types: ['book_store', 'gift_shop'] },
+      { key: 'misc_specialty', label: 'Pet & Hobby', types: ['pet_store', 'bicycle_store', 'sporting_goods_store', 'auto_parts_store'] },
+      { key: 'department_discount', label: 'Department & Discount', types: ['department_store', 'discount_store'] },
     ],
   },
   {
-    key: 'nature',
-    label: 'Nature',
+    key: 'things_to_do',
+    label: 'Things to Do',
     subs: [
-      { key: 'all', label: 'All', types: ['park','campground','beach'] },
-      { key: 'parks', label: 'Parks', types: ['park'] },
-      { key: 'camp',  label: 'Campgrounds', types: ['campground'] },
-      { key: 'beach', label: 'Beaches', types: ['beach'] },
+      { key: 'parks_nature', label: 'Parks & Nature', types: ['park', 'botanical_garden', 'dog_park', 'playground', 'state_park', 'national_park'] },
+      { key: 'entertainment', label: 'Entertainment', types: ['amusement_center', 'bowling_alley', 'movie_theater', 'video_arcade', 'water_park'] },
+      { key: 'attractions', label: 'Attractions', types: ['tourist_attraction', 'museum', 'historical_place'] },
+      { key: 'arts_culture', label: 'Arts & Culture', types: ['art_gallery', 'performing_arts_theater', 'concert_hall', 'cultural_center'] },
+      { key: 'sports', label: 'Sports', types: ['gym', 'fitness_center', 'golf_course', 'stadium', 'sports_complex'] },
+    ],
+  },
+  {
+    key: 'services',
+    label: 'Services',
+    subs: [
+      { key: 'beauty', label: 'Beauty', types: ['barber_shop', 'beauty_salon', 'hair_salon', 'nail_salon', 'tanning_studio'] },
+      { key: 'personal', label: 'Personal', types: ['spa', 'massage', 'wellness_center', 'skin_care_clinic'] },
+      { key: 'home', label: 'Home', types: ['electrician', 'plumber', 'painter', 'locksmith', 'roofing_contractor'] },
+      { key: 'professional', label: 'Professional', types: ['lawyer', 'insurance_agency', 'real_estate_agency', 'accounting', 'consultant'] },
+      { key: 'misc', label: 'Misc', types: ['courier_service', 'laundry', 'moving_company', 'storage', 'tailor', 'telecommunications_service_provider', 'veterinary_care', 'sports_coaching'] },
+    ],
+  },
+  {
+    key: 'health',
+    label: 'Health',
+    subs: [
+      { key: 'doctors', label: 'Doctors & Specialists', types: ['doctor', 'dentist', 'dental_clinic', 'physiotherapist', 'chiropractor'] },
+      { key: 'hospitals', label: 'Hospitals', types: ['hospital'] },
+      { key: 'pharm', label: 'Pharmacy', types: ['pharmacy', 'drugstore'] },
+      { key: 'fitness', label: 'Wellness & Fitness', types: ['wellness_center', 'yoga_studio', 'fitness_center', 'gym'] },
     ],
   },
   {
     key: 'lodging',
     label: 'Lodging',
     subs: [
-      { key: 'all', label: 'All', types: ['lodging'] }, // covers hotels/motels/inns
+      { key: 'hotels_resorts', label: 'Hotels & Resorts', types: ['hotel', 'resort_hotel'] },
+      { key: 'budget', label: 'Budget Stays', types: ['motel', 'hostel'] },
+      { key: 'inns_bb', label: 'Inns & B&Bs', types: ['inn', 'bed_and_breakfast'] },
+      { key: 'other', label: 'Extended & Other', types: ['extended_stay_hotel', 'guest_house', 'cottage'] },
     ],
   },
   {
-    key: 'attractions',
-    label: 'Attractions',
+    key: 'transport',
+    label: 'Transport',
     subs: [
-      { key: 'all', label: 'All', types: ['tourist_attraction','museum','art_gallery','zoo','aquarium'] },
-      { key: 'museums', label: 'Museums', types: ['museum'] },
-      { key: 'sights',  label: 'Sights/Landmarks', types: ['tourist_attraction'] },
+      { key: 'transit', label: 'Transit', types: ['bus_station', 'train_station', 'subway_station', 'light_rail_station', 'transit_station'] },
+      { key: 'air', label: 'Air', types: ['airport', 'international_airport', 'heliport'] },
+      { key: 'parking', label: 'Parking & Rest', types: ['parking', 'park_and_ride', 'rest_stop'] },
+      { key: 'taxi', label: 'Taxi', types: ['taxi_stand'] },
+      { key: 'ferry', label: 'Ferry', types: ['ferry_terminal'] },
     ],
   },
   {
-    key: 'entertainment',
-    label: 'Entertainment',
+    key: 'education',
+    label: 'Education',
     subs: [
-      { key: 'all',  label: 'All', types: ['bowling_alley','movie_theater','stadium','theater','amusement_center'] },
-      { key: 'movies', label: 'Movie theaters', types: ['movie_theater'] },
-      { key: 'bowling', label: 'Bowling', types: ['bowling_alley'] },
-      // Performing arts can come later via searchText fallback
+      { key: 'schools', label: 'Schools', types: ['preschool', 'primary_school', 'school', 'secondary_school'] },
+      { key: 'university', label: 'Universities', types: ['university'] },
+      { key: 'library', label: 'Libraries', types: ['library'] },
     ],
   },
   {
-    key: 'libraries',
-    label: 'Libraries',
+    key: 'government',
+    label: 'Government',
     subs: [
-      { key: 'all', label: 'Libraries', types: ['library'] }, // ← Your “Libraries (what category?)”: this is the official type.
+      { key: 'city', label: 'City Services', types: ['city_hall', 'courthouse', 'police', 'fire_station', 'government_office', 'local_government_office'] },
+      { key: 'post', label: 'Post Offices', types: ['post_office'] },
+    ],
+  },
+  {
+    key: 'worship',
+    label: 'Worship',
+    subs: [
+      { key: 'church', label: 'Church', types: ['church'] },
+      { key: 'hindu_temple', label: 'Hindu Temple', types: ['hindu_temple'] },
+      { key: 'mosque', label: 'Mosque', types: ['mosque'] },
+      { key: 'synagogue', label: 'Synagogue', types: ['synagogue'] },
     ],
   },
 ];
-
-export const POPULAR_TYPES: string[] = Array.from(
-  new Set([
-    'restaurant',
-    'supermarket',
-    'grocery_store',
-    'cafe',
-    'coffee_shop',
-    'gas_station',
-    'pharmacy',
-    'park',
-    'lodging',
-  ])
-);
-

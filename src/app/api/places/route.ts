@@ -1,3 +1,4 @@
+// src/app/api/places/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 
 const API_KEY = process.env.GOOGLE_MAPS_API_KEY_SERVER;
@@ -10,10 +11,130 @@ function haversineMeters(a: { lat: number; lng: number }, b: { lat: number; lng:
   const dLng = toRad(b.lng - a.lng);
   const lat1 = toRad(a.lat);
   const lat2 = toRad(b.lat);
-  const h =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
   return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+
+// ------------ Heuristics (names) ------------
+const NON_ASCII = /[^\x00-\x7F]/;
+
+const CONVENIENCE_WORDS = new RegExp(
+  [
+    '7\\s?-?\\s?eleven',
+    'mini\\s?mart',
+    'mart\\b',
+    'liquor',
+    'pharmacy',
+    'drugstore',
+    'deli',
+    'bodega',
+    'tobacco',
+    'smoke',
+    'vape',
+    'grill',
+    'kitchen',
+    'cafe',
+    'coffee',
+    'restaurant',
+    'pizza',
+    'gas',
+    'fuel',
+    'quick\\s?shop',
+    'quick\\s?stop',
+  ].join('|'),
+  'i'
+);
+
+// Big chains we don’t want in Specialty; also filters “Market Basket” false positives.
+const CHAIN_DENY = new RegExp(
+  [
+    'market\\s*basket',
+    'walgreens',
+    '\\bcvs\\b',
+    'rite\\s*aid',
+    'dunkin',
+    'starbucks',
+    'family\\s*dollar',
+    'dollar\\s*general',
+    'dollar\\s*tree',
+    'walmart',
+    'target',
+    'costco',
+    "bj'?s",
+    'sam\\s*’s|sam\\s*\\bclub\\b|sam\\s*club',
+  ].join('|'),
+  'i'
+);
+
+// “Specialty” cues for ethnic/international markets
+const SPECIALTY_CUES = new RegExp(
+  [
+    'international',
+    'world',
+    'african',
+    'asian',
+    'indian',
+    'middle\\s*eastern',
+    'halal',
+    'kosher',
+    'latin',
+    'balkan',
+    'bosn',
+    'himalay',
+    'european',
+    'caribbean',
+    'polish',
+    'russian',
+    'ukrain',
+    'mexican',
+    'italian',
+    'spanish',
+    'turkish',
+    'greek',
+    'japanese',
+    'korean',
+    'thai',
+    'vietnam',
+    'filipino',
+    'persian',
+    'arab',
+    'ethiop',
+    'somali',
+    'jamaic',
+    'trinidad',
+    'pakist',
+    'bangla',
+    'nepal',
+    'sri\\s*lanka',
+    'brazil',
+    'argentin',
+    'peru',
+    'colomb',
+    'cuban',
+    'puerto\\s*ric',
+  ].join('|'),
+  'i'
+);
+
+type PlacesNewPlace = {
+  id: string;
+  displayName?: { text?: string } | string;
+  formattedAddress?: string;
+  location?: { latLng?: { latitude?: number; longitude?: number } } | { latitude?: number; longitude?: number };
+  primaryType?: string;
+  types?: string[];
+  googleMapsUri?: string;
+};
+
+// Infer “mode” by the includedTypes set the client sent (keeps page.tsx unchanged)
+function inferMode(includedTypes: string[]): 'groceries' | 'specialty_markets' | 'generic' {
+  const set = new Set(includedTypes);
+  const isGroceries = set.size === 2 && set.has('grocery_store') && set.has('supermarket');
+  if (isGroceries) return 'groceries';
+  if (set.has('asian_grocery_store') || set.has('butcher_shop') || set.has('food_store') || set.has('market')) {
+    return 'specialty_markets';
+  }
+  return 'generic';
 }
 
 export async function POST(req: NextRequest) {
@@ -27,28 +148,25 @@ export async function POST(req: NextRequest) {
     if (typeof lat !== 'number' || typeof lng !== 'number' || typeof radiusMeters !== 'number') {
       return NextResponse.json({ error: 'lat, lng, radiusMeters required' }, { status: 400 });
     }
-    
     if (!Array.isArray(includedTypes) || includedTypes.length === 0) {
       return NextResponse.json({ error: 'includedTypes required' }, { status: 400 });
     }
-    const types: string[] =
-      Array.isArray(includedTypes) && includedTypes.length ? includedTypes : ['grocery_store'];
 
-    const body = {
-      includedTypes: types,
-      maxResultCount: 20,
-      locationRestriction: {
-        circle: { center: { latitude: lat, longitude: lng }, radius: radiusMeters },
-      },
+    const mode = inferMode(includedTypes);
+
+    // Build Places (New) Nearby request
+    const nearbyBody = {
+      includedTypes, // Table-A only; client already sends the sub's types
+      maxResultCount: 20, // API max
+      locationRestriction: { circle: { center: { latitude: lat, longitude: lng }, radius: radiusMeters } },
     };
-
-    console.log('includedTypes sent:', includedTypes);
 
     const resp = await fetch('https://places.googleapis.com/v1/places:searchNearby', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'X-Goog-Api-Key': API_KEY,
+        // include types + primaryType so we can filter
         'X-Goog-FieldMask': [
           'places.id',
           'places.displayName',
@@ -56,12 +174,10 @@ export async function POST(req: NextRequest) {
           'places.location',
           'places.primaryType',
           'places.types',
-          'places.rating',
-          'places.userRatingCount',
           'places.googleMapsUri',
         ].join(','),
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify(nearbyBody),
     });
 
     if (!resp.ok) {
@@ -70,38 +186,73 @@ export async function POST(req: NextRequest) {
     }
 
     const data = await resp.json();
-    const raw: any[] = Array.isArray(data.places) ? data.places : [];
+    const raw: PlacesNewPlace[] = Array.isArray(data?.places) ? data.places : [];
 
-    // Strict post-filter: require primaryType to be one of the selected types
-    const typeSet = new Set<string>(types);
-    const filtered = raw.filter((p) => {
-      const primary: string | undefined = p.primaryType;
-      if (!typeSet.size) return true;
-      return primary ? typeSet.has(primary) : false;
+    // ---------- Post-filters ----------
+    let filtered: PlacesNewPlace[] = raw;
+
+    if (mode === 'groceries') {
+      // STRICT: primary type must be grocery_store or supermarket; trim out convenience/deli/specialty by name
+      filtered = raw.filter((p) => {
+        const name = typeof p.displayName === 'string' ? p.displayName : p.displayName?.text || '';
+        const pt = (p.primaryType || '').toLowerCase();
+        if (pt !== 'grocery_store' && pt !== 'supermarket') return false;
+        if (CONVENIENCE_WORDS.test(name)) return false;
+        if (SPECIALTY_CUES.test(name) || NON_ASCII.test(name)) return false;
+        return true;
+      });
+    }
+
+    if (mode === 'specialty_markets') {
+      // Keep explicit specialty types…
+      let spec = raw.filter((p) => {
+        const pt = (p.primaryType || '').toLowerCase();
+        return pt === 'asian_grocery_store' || pt === 'butcher_shop';
+      });
+
+      // …and include fallback food_store/market/grocery only if the name clearly indicates specialty,
+      // while avoiding big chain supermarkets/pharmacies/convenience.
+      const extra = raw.filter((p) => {
+        const pt = (p.primaryType || '').toLowerCase();
+        if (pt === 'asian_grocery_store' || pt === 'butcher_shop') return false; // already included
+        const name = typeof p.displayName === 'string' ? p.displayName : p.displayName?.text || '';
+        if (CHAIN_DENY.test(name)) return false;
+        if (CONVENIENCE_WORDS.test(name)) return false;
+        // pick up international/specialty cues or non-ASCII names
+        return SPECIALTY_CUES.test(name) || NON_ASCII.test(name);
+      });
+
+      filtered = [...spec, ...extra];
+    }
+
+    // Map to client shape + pre-rank by straight-line distance
+    const places = filtered
+      .map((p) => {
+        const ll = (p.location as any)?.latLng ?? p.location;
+        const position = {
+          lat: Number(ll?.latitude ?? ll?.lat ?? 0),
+          lng: Number(ll?.longitude ?? ll?.lng ?? 0),
+        };
+        return {
+          id: p.id,
+          name: typeof p.displayName === 'string' ? p.displayName : p.displayName?.text ?? 'Unknown',
+          address: p.formattedAddress ?? '',
+          primaryType: p.primaryType ?? '',
+          types: p.types ?? [],
+          googleMapsUri: p.googleMapsUri ?? '',
+          location: position,
+          directDistanceMeters: haversineMeters({ lat, lng }, position),
+        };
+      })
+      .sort((a, b) => a.directDistanceMeters - b.directDistanceMeters)
+      .slice(0, 20);
+
+    return NextResponse.json({
+      origin: { lat, lng },
+      mode,
+      debugIncludedTypes: includedTypes,
+      places,
     });
-
-    const places = filtered.map((p: any) => {
-      const ll = p.location?.latLng ?? p.location;
-      const position = {
-        lat: Number(ll?.latitude ?? ll?.lat ?? 0),
-        lng: Number(ll?.longitude ?? ll?.lng ?? 0),
-      };
-      return {
-        id: p.id as string,
-        name: p.displayName?.text ?? p.displayName ?? 'Unknown',
-        address: p.formattedAddress ?? '',
-        primaryType: p.primaryType ?? '',
-        rating: p.rating ?? null,
-        userRatingCount: p.userRatingCount ?? 0,
-        googleMapsUri: p.googleMapsUri ?? '',
-        location: position,
-        directDistanceMeters: haversineMeters({ lat, lng }, position),
-      };
-    });
-
-    // Pre-rank by straight-line distance and keep top 20
-    places.sort((a: any, b: any) => a.directDistanceMeters - b.directDistanceMeters);
-    return NextResponse.json({ origin: { lat, lng }, places: places.slice(0, 20) });
   } catch (err: any) {
     return NextResponse.json(
       { error: 'Server error', details: String(err?.message || err) },

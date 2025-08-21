@@ -28,38 +28,27 @@ export default function Filters({
     selections.some((s) => s.parent === p && s.subKey === subKey);
 
   // When changing parent: keep only that parent's selections.
-  // If none exist yet for that parent, default to "all".
+  // If none exist yet, default to the FIRST sub (not "all").
   function handleParentClick(next: CatKey) {
     setParent(next);
     const forNext = selections.filter((s) => s.parent === next);
     if (forNext.length > 0) {
       if (forNext.length !== selections.length) onChange(forNext);
-    } else {
-      onChange([{ parent: next, subKey: 'all' }]);
+      return;
     }
+    const cat = CATEGORIES.find((c) => c.key === next);
+    const firstSub = cat?.subs[0]?.key;
+    if (firstSub) onChange([{ parent: next, subKey: firstSub }]);
   }
 
   function toggleSub(parentKey: CatKey, subKey: string) {
-    const isAll = subKey === 'all';
-
-    // Split selections by parent
     const keepOthers = selections.filter((s) => s.parent !== parentKey);
     const currentForParent = selections.filter((s) => s.parent === parentKey);
 
-    if (isAll) {
-      // "All" toggles on/off and is exclusive within the parent
-      const hasAll = currentForParent.some((s) => s.subKey === 'all');
-      onChange(hasAll ? keepOthers : [...keepOthers, { parent: parentKey, subKey: 'all' }]);
-      return;
-    }
-
-    // Clicking a specific sub removes "all" and toggles that sub
-    const withoutAll = currentForParent.filter((s) => s.subKey !== 'all');
-    const already = withoutAll.some((s) => s.subKey === subKey);
-
+    const already = currentForParent.some((s) => s.subKey === subKey);
     const nextForParent = already
-      ? withoutAll.filter((s) => s.subKey !== subKey)
-      : [...withoutAll, { parent: parentKey, subKey }];
+      ? currentForParent.filter((s) => s.subKey !== subKey)
+      : [...currentForParent, { parent: parentKey, subKey }];
 
     onChange([...keepOthers, ...nextForParent]);
   }
