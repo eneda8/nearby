@@ -112,6 +112,16 @@ const SPECIALTY_CUES = new RegExp(
     'colomb',
     'cuban',
     'puerto\\s*ric',
+    // Added cues for cheese, pasta, fish, meat, bakery, deli, etc.
+    'cheese', 'pasta', 'fish', 'meat', 'butcher', 'seafood', 'bakery', 'deli', 'gourmet', 'artisan', 'organic', 'natural', 'farmers', 'produce', 'olive oil', 'spice', 'tea', 'wine', 'liquor', 'beer', 'sausage', 'smokehouse', 'charcuterie', 'salumeria', 'fromager', 'pescader', 'carnicer', 'panader', 'pasteler', 'formagger', 'caseific', 'boucher', 'poissonner', 'alimentari', 'mercado', 'mercato', 'delicatessen', 'provision', 'fine food', 'specialty food', 'speciality food', 'specialty market', 'speciality market'
+  ].join('|'),
+  'i'
+);
+
+// Exclude food service and unrelated types from specialty markets
+const EXCLUDE_FOOD_SERVICE = new RegExp(
+  [
+    'restaurant', 'cafe', 'sandwich', 'grill', 'pizza', 'bar', 'pub', 'bistro', 'diner', 'steak', 'burger', 'chicken', 'bbq', 'wing', 'tavern', 'cantina', 'taqueria', 'pizzeria', 'trattoria', 'ristorante', 'gastropub', 'brewery', 'wine bar', 'coffee', 'tea house', 'meal_takeaway', 'meal_delivery', 'fast food', 'food court', 'food truck', 'food stand', 'food delivery', 'food service', 'aquarium', 'pet shop', 'pet store', 'pet supply', 'pet supplies', 'animal', 'dog', 'cat', 'veterinary', 'vet', 'grooming', 'boarding', 'kennel', 'zoo', 'wildlife', 'fish tank', 'fish aquarium', 'aquatic', 'aquatics', 'aquarist', 'aquascape', 'aquascaping', 'beer'
   ].join('|'),
   'i'
 );
@@ -239,6 +249,85 @@ export async function POST(req: NextRequest) {
         const dist = haversineMeters({ lat, lng }, position);
         return dist <= radiusMeters;
       });
+    } else if (mode === 'specialty_markets') {
+      // 1. Type-based search (as before)
+      const nearbyBody = {
+        includedTypes,
+        maxResultCount: 20,
+        locationRestriction: { circle: { center: { latitude: lat, longitude: lng }, radius: radiusMeters } },
+      };
+      const resp = await fetch('https://places.googleapis.com/v1/places:searchNearby', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': API_KEY,
+          'X-Goog-FieldMask': [
+            'places.id',
+            'places.displayName',
+            'places.formattedAddress',
+            'places.location',
+            'places.primaryType',
+            'places.types',
+            'places.googleMapsUri',
+          ].join(','),
+        },
+        body: JSON.stringify(nearbyBody),
+      });
+      const data = await resp.json();
+      const typeResults: PlacesNewPlace[] = Array.isArray(data?.places) ? data.places : [];
+
+      // 2. TextQuery for specialty cues (expanded and run in parallel)
+      const SPECIALTY_MARKET_QUERIES = [
+        'african market', 'asian market', 'balkan market', 'himalayan market', 'international market', 'latin market', 'european market', 'caribbean market', 'polish market', 'russian market', 'mexican market', 'italian market', 'spanish market', 'turkish market', 'greek market', 'japanese market', 'korean market', 'thai market', 'vietnamese market', 'filipino market', 'persian market', 'arab market', 'ethiopian market', 'jamaican market', 'indian market', 'halal market', 'kosher market', 'bosna store', 'himalayas store', 'el parcero market', 'pasta & cheese shop',
+        // Expanded for cheese, pasta, fish, meat, bakery, deli, etc.
+        'cheese shop', 'pasta shop', 'fish market', 'meat market', 'butcher shop', 'seafood market', 'bakery', 'deli', 'gourmet market', 'italian deli', 'french bakery', 'german market', 'greek deli', 'spanish deli', 'middle eastern market', 'eastern european market', 'asian grocery', 'latin grocery', 'caribbean grocery', 'halal grocery', 'kosher grocery', 'specialty food', 'specialty grocery', 'fine foods', 'artisan market', 'organic market', 'natural foods', 'farmers market', 'produce market', 'olive oil shop', 'spice shop', 'tea shop', 'coffee shop', 'wine shop', 'liquor store', 'beer store', 'sausage shop', 'smokehouse', 'charcuterie', 'salumeria', 'fromagerie', 'pescaderia', 'carniceria', 'panaderia', 'pasteleria', 'formaggeria', 'caseificio', 'boucherie', 'poissonnerie', 'alimentari', 'mercado', 'mercato', 'delicatessen', 'provisions', 'provision store', 'international foods', 'european foods', 'asian foods', 'latin foods', 'middle eastern foods', 'african foods', 'indian foods', 'balkan foods', 'himalayan foods', 'russian foods', 'polish foods', 'greek foods', 'turkish foods', 'japanese foods', 'korean foods', 'thai foods', 'vietnamese foods', 'filipino foods', 'persian foods', 'arab foods', 'ethiopian foods', 'jamaican foods', 'mexican foods', 'italian foods', 'spanish foods', 'french foods', 'german foods', 'caribbean foods', 'organic foods', 'natural foods', 'artisan foods', 'fine foods', 'gourmet foods', 'specialty foods', 'farmers foods', 'produce foods', 'olive oil foods', 'spice foods', 'tea foods', 'coffee foods', 'wine foods', 'liquor foods', 'beer foods', 'sausage foods', 'smokehouse foods', 'charcuterie foods', 'salumeria foods', 'fromagerie foods', 'pescaderia foods', 'carniceria foods', 'panaderia foods', 'pasteleria foods', 'formaggeria foods', 'caseificio foods', 'boucherie foods', 'poissonnerie foods', 'alimentari foods', 'mercado foods', 'mercato foods', 'delicatessen foods', 'provisions foods', 'provision foods'
+      ];
+      // Run all textQuery fetches in parallel
+      const textResults: PlacesNewPlace[] = [];
+      await Promise.all(
+        SPECIALTY_MARKET_QUERIES.map(async (query) => {
+          const textBody = {
+            textQuery: query + ' near ' + lat + ',' + lng,
+            maxResultCount: 10,
+            locationBias: { circle: { center: { latitude: lat, longitude: lng }, radius: radiusMeters } },
+          };
+          const resp = await fetch('https://places.googleapis.com/v1/places:searchText', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Goog-Api-Key': API_KEY,
+              'X-Goog-FieldMask': [
+                'places.id',
+                'places.displayName',
+                'places.formattedAddress',
+                'places.location',
+                'places.primaryType',
+                'places.types',
+                'places.googleMapsUri',
+              ].join(','),
+            },
+            body: JSON.stringify(textBody),
+          });
+          const data = await resp.json();
+          if (Array.isArray(data?.places)) {
+            textResults.push(...data.places);
+          }
+        })
+      );
+      // Merge and dedupe by id, filter by radius
+      const all = [...typeResults, ...textResults];
+      const seen = new Set<string>();
+      raw = all.filter((p) => {
+        if (!p.id || seen.has(p.id)) return false;
+        seen.add(p.id);
+        const ll = (p.location as any)?.latLng ?? p.location;
+        const position = {
+          lat: Number(ll?.latitude ?? ll?.lat ?? 0),
+          lng: Number(ll?.longitude ?? ll?.lng ?? 0),
+        };
+        const dist = haversineMeters({ lat, lng }, position);
+        return dist <= radiusMeters;
+      });
     } else {
       // Build Places (New) Nearby request
       const nearbyBody = {
@@ -310,6 +399,8 @@ export async function POST(req: NextRequest) {
         if (pt !== 'grocery_store' && pt !== 'supermarket') return false;
         if (CONVENIENCE_WORDS.test(name)) return false;
         if (SPECIALTY_CUES.test(name) || NON_ASCII.test(name)) return false;
+        // Exclude if name contains "market", "shop", or "store" and matches specialty cues or non-ASCII
+        if (/market|shop|store/i.test(name) && (SPECIALTY_CUES.test(name) || NON_ASCII.test(name))) return false;
         return true;
       });
     } else if (mode === 'specialty_markets') {
@@ -327,6 +418,9 @@ export async function POST(req: NextRequest) {
         const name = typeof p.displayName === 'string' ? p.displayName : p.displayName?.text || '';
         if (CHAIN_DENY.test(name)) return false;
         if (CONVENIENCE_WORDS.test(name)) return false;
+        // Exclude if name or types match food service or unrelated
+        if (EXCLUDE_FOOD_SERVICE.test(name)) return false;
+        if ((p.types || []).some(t => EXCLUDE_FOOD_SERVICE.test(t))) return false;
         // pick up international/specialty cues or non-ASCII names
         return SPECIALTY_CUES.test(name) || NON_ASCII.test(name);
       });

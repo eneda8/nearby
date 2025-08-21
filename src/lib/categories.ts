@@ -69,6 +69,7 @@ export const CATEGORIES: CatMap = [
       // Specialty Markets stays here; backend applies a specialty-only heuristic
       { key: 'specialty_markets', label: 'Specialty Markets', types: ['asian_grocery_store', 'butcher_shop', 'food_store', 'market'] },
       { key: 'bars', label: 'Bars', types: ['bar', 'pub', 'wine_bar'] },
+      { key: 'liquor', label: 'Liquor, Beer & Wine', types: ['liquor_store'] },
     ],
   },
   {
