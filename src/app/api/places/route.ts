@@ -147,6 +147,11 @@ function inferMode(includedTypes: string[]): 'groceries' | 'specialty_markets' |
   return 'generic';
 }
 
+// Helper to check if includedTypes contains any of a set of types
+function hasAnyType(includedTypes: string[], types: string[]): boolean {
+  return types.some(t => includedTypes.includes(t));
+}
+
 export async function POST(req: NextRequest) {
   try {
     if (!API_KEY) {
@@ -164,13 +169,41 @@ export async function POST(req: NextRequest) {
 
     const mode = inferMode(includedTypes);
 
-    // Text-based search for Print/Ship brands
-    const isPrintShipRequest =
+    // --- Centralized, mutually exclusive category routing ---
+    let runPrintShip = includedTypes.includes('post_office');
+    let otherTypes = includedTypes.filter((t: string) => t !== 'post_office');
+    let category = '';
+    if (runPrintShip && otherTypes.length === 0) {
+      category = 'print_ship_only';
+    } else if (runPrintShip && otherTypes.length > 0) {
+      category = 'print_ship_and_others';
+    } else if (
       Array.isArray(includedTypes) &&
-      includedTypes.length === 1 &&
-      includedTypes[0] === 'post_office';
+      includedTypes.length === 2 &&
+      includedTypes.includes('grocery_store') &&
+      includedTypes.includes('supermarket')
+    ) {
+      category = 'groceries';
+    } else if (mode === 'specialty_markets') {
+      category = 'specialty_markets';
+    } else if (hasAnyType(includedTypes, ['pharmacy', 'drugstore'])) {
+      category = 'pharmacy';
+    } else if (hasAnyType(includedTypes, ['gas_station', 'ev_charging_station'])) {
+      category = 'gas_ev';
+    } else if (hasAnyType(includedTypes, ['bank', 'atm'])) {
+      category = 'bank_atm';
+    } else if (includedTypes.length === 1 && includedTypes[0] === 'clothing_store') {
+      category = 'clothing';
+    } else if (includedTypes.length === 1 && includedTypes[0] === 'jewelry_and_accessories') {
+      category = 'jewelry';
+    } else {
+      category = 'default';
+    }
+
     let raw: PlacesNewPlace[] = [];
-    if (isPrintShipRequest) {
+    let filtered: PlacesNewPlace[] = [];
+
+    if (category === 'print_ship_only') {
       // 1. Search for post_office
       const postOfficeBody = {
         includedTypes: ['post_office'],
@@ -237,7 +270,7 @@ export async function POST(req: NextRequest) {
       // Merge and deduplicate by id
       const all = [...postOffices, ...brandResults];
       const seen = new Set<string>();
-      raw = all.filter((p) => {
+      raw = all.filter((p: PlacesNewPlace) => {
         if (!p.id || seen.has(p.id)) return false;
         seen.add(p.id);
         // Filter by actual distance from center
@@ -249,7 +282,168 @@ export async function POST(req: NextRequest) {
         const dist = haversineMeters({ lat, lng }, position);
         return dist <= radiusMeters;
       });
-    } else if (mode === 'specialty_markets') {
+      filtered = raw;
+      console.log('[Print/Ship] raw:', raw.length, raw.slice(0, 3).map((p: PlacesNewPlace) => (typeof p.displayName === 'string' ? p.displayName : p.displayName?.text || '')));
+    } else if (category === 'print_ship_and_others') {
+      // Run print/ship logic
+      // 1. Search for post_office
+      const postOfficeBody = {
+        includedTypes: ['post_office'],
+        maxResultCount: 20,
+        locationRestriction: { circle: { center: { latitude: lat, longitude: lng }, radius: radiusMeters } },
+      };
+      const resp1 = await fetch('https://places.googleapis.com/v1/places:searchNearby', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': API_KEY,
+          'X-Goog-FieldMask': [
+            'places.id',
+            'places.displayName',
+            'places.formattedAddress',
+            'places.location',
+            'places.primaryType',
+            'places.types',
+            'places.googleMapsUri',
+          ].join(','),
+        },
+        body: JSON.stringify(postOfficeBody),
+      });
+      const data1 = await resp1.json();
+      const postOffices: PlacesNewPlace[] = Array.isArray(data1?.places) ? data1.places : [];
+      // 2. For each brand, do a textQuery search
+      const BRANDS = [
+        'The UPS Store',
+        'FedEx',
+        'OfficeDepot',
+        'OfficeMax',
+        'Staples',
+      ];
+      const brandResults: PlacesNewPlace[] = [];
+      for (const brand of BRANDS) {
+        const textBody = {
+          textQuery: brand + ' near ' + lat + ',' + lng,
+          maxResultCount: 10,
+          locationBias: { circle: { center: { latitude: lat, longitude: lng }, radius: radiusMeters } },
+        };
+        const resp = await fetch('https://places.googleapis.com/v1/places:searchText', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Goog-Api-Key': API_KEY,
+            'X-Goog-FieldMask': [
+              'places.id',
+              'places.displayName',
+              'places.formattedAddress',
+              'places.location',
+              'places.primaryType',
+              'places.types',
+              'places.googleMapsUri',
+            ].join(','),
+          },
+          body: JSON.stringify(textBody),
+        });
+        const data = await resp.json();
+        if (Array.isArray(data?.places)) {
+          brandResults.push(...data.places);
+        }
+      }
+      // Merge and deduplicate by id
+      const printShipAll = [...postOffices, ...brandResults];
+      const seen = new Set<string>();
+      const printShipRaw = printShipAll.filter((p: PlacesNewPlace) => {
+        if (!p.id || seen.has(p.id)) return false;
+        seen.add(p.id);
+        const ll = (p.location as any)?.latLng ?? p.location;
+        const position = {
+          lat: Number(ll?.latitude ?? ll?.lat ?? 0),
+          lng: Number(ll?.longitude ?? ll?.lng ?? 0),
+        };
+        const dist = haversineMeters({ lat, lng }, position);
+        return dist <= radiusMeters;
+      });
+      // Now run the default logic for the other types (excluding post_office)
+      let otherRaw: PlacesNewPlace[] = [];
+      if (otherTypes.length > 0) {
+        const nearbyBody = {
+          includedTypes: otherTypes,
+          maxResultCount: 20,
+          locationRestriction: { circle: { center: { latitude: lat, longitude: lng }, radius: radiusMeters } },
+        };
+        const resp = await fetch('https://places.googleapis.com/v1/places:searchNearby', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Goog-Api-Key': API_KEY,
+            'X-Goog-FieldMask': [
+              'places.id',
+              'places.displayName',
+              'places.formattedAddress',
+              'places.location',
+              'places.primaryType',
+              'places.types',
+              'places.googleMapsUri',
+            ].join(','),
+          },
+          body: JSON.stringify(nearbyBody),
+        });
+        const data = await resp.json();
+        otherRaw = Array.isArray(data?.places) ? data.places : [];
+      }
+      // Merge and dedupe printShipRaw and otherRaw
+      const all = [...printShipRaw, ...otherRaw];
+      const seen2 = new Set<string>();
+      raw = all.filter((p: PlacesNewPlace) => {
+        if (!p.id || seen2.has(p.id)) return false;
+        seen2.add(p.id);
+        const ll = (p.location as any)?.latLng ?? p.location;
+        const position = {
+          lat: Number(ll?.latitude ?? ll?.lat ?? 0),
+          lng: Number(ll?.longitude ?? ll?.lng ?? 0),
+        };
+        const dist = haversineMeters({ lat, lng }, position);
+        return dist <= radiusMeters;
+      });
+      filtered = raw;
+      console.log('[Print/Ship+Other] raw:', raw.length, raw.slice(0, 3).map((p: PlacesNewPlace) => (typeof p.displayName === 'string' ? p.displayName : p.displayName?.text || '')));
+    } else if (category === 'groceries') {
+      // --- Groceries: strict logic ---
+      const groceriesBody = {
+        includedTypes: ['grocery_store', 'supermarket'],
+        maxResultCount: 20,
+        locationRestriction: { circle: { center: { latitude: lat, longitude: lng }, radius: radiusMeters } },
+      };
+      const resp = await fetch('https://places.googleapis.com/v1/places:searchNearby', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': API_KEY,
+          'X-Goog-FieldMask': [
+            'places.id',
+            'places.displayName',
+            'places.formattedAddress',
+            'places.location',
+            'places.primaryType',
+            'places.types',
+            'places.googleMapsUri',
+          ].join(','),
+        },
+        body: JSON.stringify(groceriesBody),
+      });
+      const data = await resp.json();
+      const typeResults: PlacesNewPlace[] = Array.isArray(data?.places) ? data.places : [];
+      raw = typeResults;
+      filtered = raw.filter((p: PlacesNewPlace) => {
+        const name = typeof p.displayName === 'string' ? p.displayName : p.displayName?.text || '';
+        const pt = (p.primaryType || '').toLowerCase();
+        if (pt !== 'grocery_store' && pt !== 'supermarket') return false;
+        if (CONVENIENCE_WORDS.test(name)) return false;
+        if (SPECIALTY_CUES.test(name) || NON_ASCII.test(name)) return false;
+        if (/market|shop|store/i.test(name) && (SPECIALTY_CUES.test(name) || NON_ASCII.test(name))) return false;
+        return true;
+      });
+      console.log('[Groceries] filtered:', filtered.length, filtered.slice(0, 3).map((p: PlacesNewPlace) => (typeof p.displayName === 'string' ? p.displayName : p.displayName?.text || '')));
+    } else if (category === 'specialty_markets') {
       // 1. Type-based search (as before)
       const nearbyBody = {
         includedTypes,
@@ -317,7 +511,7 @@ export async function POST(req: NextRequest) {
       // Merge and dedupe by id, filter by radius
       const all = [...typeResults, ...textResults];
       const seen = new Set<string>();
-      raw = all.filter((p) => {
+      raw = all.filter((p: PlacesNewPlace) => {
         if (!p.id || seen.has(p.id)) return false;
         seen.add(p.id);
         const ll = (p.location as any)?.latLng ?? p.location;
@@ -328,14 +522,14 @@ export async function POST(req: NextRequest) {
         const dist = haversineMeters({ lat, lng }, position);
         return dist <= radiusMeters;
       });
-    } else {
-      // Build Places (New) Nearby request
+      console.log('[Specialty Markets] raw:', raw.length, raw.slice(0, 3).map((p: PlacesNewPlace) => (typeof p.displayName === 'string' ? p.displayName : p.displayName?.text || '')));
+    } else if (category === 'pharmacy') {
+      // 1. Type-based search (include both pharmacy and drugstore types)
       const nearbyBody = {
-        includedTypes,
+        includedTypes: ['pharmacy', 'drugstore'],
         maxResultCount: 20,
         locationRestriction: { circle: { center: { latitude: lat, longitude: lng }, radius: radiusMeters } },
       };
-
       const resp = await fetch('https://places.googleapis.com/v1/places:searchNearby', {
         method: 'POST',
         headers: {
@@ -353,84 +547,364 @@ export async function POST(req: NextRequest) {
         },
         body: JSON.stringify(nearbyBody),
       });
-
-      if (!resp.ok) {
-        const text = await resp.text();
-        return NextResponse.json({ error: 'Places API error', details: text }, { status: resp.status });
-      }
-
+      const data = await resp.json();
+      const typeResults: PlacesNewPlace[] = Array.isArray(data?.places) ? data.places : [];
+      // 2. TextQuery for major brands (run in parallel)
+      const PHARMACY_BRANDS = [
+        'CVS', 'Walgreens', 'Rite Aid', 'Duane Reade', 'Walmart Pharmacy', 'Target Pharmacy', 'Kroger Pharmacy', 'Publix Pharmacy', 'Safeway Pharmacy', 'Albertsons Pharmacy', 'Costco Pharmacy', 'Sam\'s Club Pharmacy', 'Wegmans Pharmacy', 'Meijer Pharmacy', 'H-E-B Pharmacy', 'Giant Pharmacy', 'Hy-Vee Pharmacy', 'Fred Meyer Pharmacy', 'Longs Drugs', 'Shoppers Drug Mart', 'London Drugs', 'Pharmacy', 'Drugstore'
+      ];
+      const textResults: PlacesNewPlace[] = [];
+      await Promise.all(PHARMACY_BRANDS.map(async (brand) => {
+        const textBody = {
+          textQuery: brand + ' near ' + lat + ',' + lng,
+          maxResultCount: 10,
+          locationBias: { circle: { center: { latitude: lat, longitude: lng }, radius: radiusMeters } },
+        };
+        const resp = await fetch('https://places.googleapis.com/v1/places:searchText', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Goog-Api-Key': API_KEY,
+            'X-Goog-FieldMask': [
+              'places.id',
+              'places.displayName',
+              'places.formattedAddress',
+              'places.location',
+              'places.primaryType',
+              'places.types',
+              'places.googleMapsUri',
+            ].join(','),
+          },
+          body: JSON.stringify(textBody),
+        });
+        const data = await resp.json();
+        if (Array.isArray(data?.places)) {
+          textResults.push(...data.places);
+        }
+      }));
+      // Merge and dedupe by id, filter by radius
+      const all = [...typeResults, ...textResults];
+      const seen = new Set<string>();
+      raw = all.filter((p: PlacesNewPlace) => {
+        if (!p.id || seen.has(p.id)) return false;
+        seen.add(p.id);
+        const ll = (p.location as any)?.latLng ?? p.location;
+        const position = {
+          lat: Number(ll?.latitude ?? ll?.lat ?? 0),
+          lng: Number(ll?.longitude ?? ll?.lng ?? 0),
+        };
+        const dist = haversineMeters({ lat, lng }, position);
+        return dist <= radiusMeters;
+      });
+      console.log('[Pharmacy] raw:', raw.length, raw.slice(0, 3).map((p: PlacesNewPlace) => (typeof p.displayName === 'string' ? p.displayName : p.displayName?.text || '')));
+      // Loosen DENY regex: only exclude obvious non-pharmacy
+      const PHARMACY_DENY = new RegExp(
+        [
+          'restaurant', 'deli', 'pizza', 'grill', 'kitchen', 'cafe', 'coffee', 'liquor', 'beer', 'wine', 'market basket', 'walmart(?! pharmacy)', 'target(?! pharmacy)', 'costco(?! pharmacy)', 'bj', 'sam', 'grocery', 'supermarket', 'bank', 'atm', 'auto', 'repair', 'dealer', 'parts', 'oil', 'change', 'station', 'pet', 'sport', 'electronics', 'office', 'best buy', 'staples', 'dollar', 'family dollar', 'dollar general', 'dollar tree', '7\s?-?\s?eleven', 'convenience'
+        ].join('|'),
+        'i'
+      );
+      filtered = raw.filter((p: PlacesNewPlace) => {
+        const name = typeof p.displayName === 'string' ? p.displayName : p.displayName?.text || '';
+        return !PHARMACY_DENY.test(name);
+      });
+      console.log('[Pharmacy] filtered:', filtered.length, filtered.slice(0, 3).map((p: PlacesNewPlace) => (typeof p.displayName === 'string' ? p.displayName : p.displayName?.text || '')));
+    } else if (category === 'gas_ev') {
+      // 1. Type-based search (include both gas_station and ev_charging_station)
+      const nearbyBody = {
+        includedTypes: ['gas_station', 'ev_charging_station'],
+        maxResultCount: 20,
+        locationRestriction: { circle: { center: { latitude: lat, longitude: lng }, radius: radiusMeters } },
+      };
+      const resp = await fetch('https://places.googleapis.com/v1/places:searchNearby', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': API_KEY,
+          'X-Goog-FieldMask': [
+            'places.id',
+            'places.displayName',
+            'places.formattedAddress',
+            'places.location',
+            'places.primaryType',
+            'places.types',
+            'places.googleMapsUri',
+          ].join(','),
+        },
+        body: JSON.stringify(nearbyBody),
+      });
+      const data = await resp.json();
+      const typeResults: PlacesNewPlace[] = Array.isArray(data?.places) ? data.places : [];
+      // 2. TextQuery for major brands (run in parallel)
+      const GAS_BRANDS = [
+        'Shell', 'Exxon', 'Mobil', 'Chevron', 'BP', 'Sunoco', 'Marathon', 'Phillips 66', 'Valero', 'Circle K', 'Costco Gas', 'Sam\'s Club Gas', 'Speedway', 'QuikTrip', 'Wawa', 'RaceTrac', 'Love\'s', 'Pilot', 'Flying J', 'Gulf', 'Arco', '76', 'Conoco', 'Sinclair', 'Hess', 'Irving', 'Casey\'s', 'Holiday', 'Sheetz', 'GetGo', 'Kwik Trip', 'Kwik Fill', 'Maverik', 'Gas Station', 'EV Charging Station', 'Tesla Supercharger', 'ChargePoint', 'Electrify America', 'EVgo', 'Blink Charging', 'Volta Charging', 'Greenlots', 'SemaConnect', 'EV Connect', 'EVBox', 'EV Charging'
+      ];
+      const textResults: PlacesNewPlace[] = [];
+      await Promise.all(GAS_BRANDS.map(async (brand) => {
+        const textBody = {
+          textQuery: brand + ' near ' + lat + ',' + lng,
+          maxResultCount: 10,
+          locationBias: { circle: { center: { latitude: lat, longitude: lng }, radius: radiusMeters } },
+        };
+        const resp = await fetch('https://places.googleapis.com/v1/places:searchText', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Goog-Api-Key': API_KEY,
+            'X-Goog-FieldMask': [
+              'places.id',
+              'places.displayName',
+              'places.formattedAddress',
+              'places.location',
+              'places.primaryType',
+              'places.types',
+              'places.googleMapsUri',
+            ].join(','),
+          },
+          body: JSON.stringify(textBody),
+        });
+        const data = await resp.json();
+        if (Array.isArray(data?.places)) {
+          textResults.push(...data.places);
+        }
+      }));
+      // Merge and dedupe by id, filter by radius
+      const all = [...typeResults, ...textResults];
+      const seen = new Set<string>();
+      raw = all.filter((p: PlacesNewPlace) => {
+        if (!p.id || seen.has(p.id)) return false;
+        seen.add(p.id);
+        const ll = (p.location as any)?.latLng ?? p.location;
+        const position = {
+          lat: Number(ll?.latitude ?? ll?.lat ?? 0),
+          lng: Number(ll?.longitude ?? ll?.lng ?? 0),
+        };
+        const dist = haversineMeters({ lat, lng }, position);
+        return dist <= radiusMeters;
+      });
+      console.log('[Gas/EV] raw:', raw.length, raw.slice(0, 3).map((p: PlacesNewPlace) => (typeof p.displayName === 'string' ? p.displayName : p.displayName?.text || '')));
+      // Loosen DENY regex: only exclude obvious non-gas/ev
+      const GAS_DENY = new RegExp(
+        [
+          'restaurant', 'deli', 'pizza', 'grill', 'kitchen', 'cafe', 'coffee', 'liquor', 'beer', 'wine', 'market basket', 'bank', 'atm', 'auto repair', 'dealer', 'parts', 'oil change', 'stationery', 'pet', 'sport', 'electronics', 'office', 'best buy', 'staples', 'dollar', 'family dollar', 'dollar general', 'dollar tree', 'pharmacy', 'drugstore', 'grocery', 'supermarket'
+        ].join('|'),
+        'i'
+      );
+      filtered = raw.filter((p: PlacesNewPlace) => {
+        const name = typeof p.displayName === 'string' ? p.displayName : p.displayName?.text || '';
+        return !GAS_DENY.test(name);
+      });
+      console.log('[Gas/EV] filtered:', filtered.length, filtered.slice(0, 3).map((p: PlacesNewPlace) => (typeof p.displayName === 'string' ? p.displayName : p.displayName?.text || '')));
+    } else if (category === 'bank_atm') {
+      // 1. Type-based search (include both bank and atm types)
+      const nearbyBody = {
+        includedTypes: ['bank', 'atm'],
+        maxResultCount: 20,
+        locationRestriction: { circle: { center: { latitude: lat, longitude: lng }, radius: radiusMeters } },
+      };
+      const resp = await fetch('https://places.googleapis.com/v1/places:searchNearby', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': API_KEY,
+          'X-Goog-FieldMask': [
+            'places.id',
+            'places.displayName',
+            'places.formattedAddress',
+            'places.location',
+            'places.primaryType',
+            'places.types',
+            'places.googleMapsUri',
+          ].join(','),
+        },
+        body: JSON.stringify(nearbyBody),
+      });
+      const data = await resp.json();
+      const typeResults: PlacesNewPlace[] = Array.isArray(data?.places) ? data.places : [];
+      // 2. TextQuery for major banks/ATM brands (run in parallel)
+      const BANK_BRANDS = [
+        'Chase', 'Bank of America', 'Wells Fargo', 'Citibank', 'US Bank', 'PNC', 'Capital One', 'TD Bank', 'BB&T', 'SunTrust', 'Regions', 'Fifth Third', 'KeyBank', 'Huntington', 'Santander', 'M&T Bank', 'BMO Harris', 'Ally Bank', 'Charles Schwab', 'HSBC', 'Citizens Bank', 'First Republic', 'Bank', 'ATM'
+      ];
+      const textResults: PlacesNewPlace[] = [];
+      await Promise.all(BANK_BRANDS.map(async (brand) => {
+        const textBody = {
+          textQuery: brand + ' near ' + lat + ',' + lng,
+          maxResultCount: 10,
+          locationBias: { circle: { center: { latitude: lat, longitude: lng }, radius: radiusMeters } },
+        };
+        const resp = await fetch('https://places.googleapis.com/v1/places:searchText', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Goog-Api-Key': API_KEY,
+            'X-Goog-FieldMask': [
+              'places.id',
+              'places.displayName',
+              'places.formattedAddress',
+              'places.location',
+              'places.primaryType',
+              'places.types',
+              'places.googleMapsUri',
+            ].join(','),
+          },
+          body: JSON.stringify(textBody),
+        });
+        const data = await resp.json();
+        if (Array.isArray(data?.places)) {
+          textResults.push(...data.places);
+        }
+      }));
+      // Merge and dedupe by id, filter by radius
+      const all = [...typeResults, ...textResults];
+      const seen = new Set<string>();
+      raw = all.filter((p: PlacesNewPlace) => {
+        if (!p.id || seen.has(p.id)) return false;
+        seen.add(p.id);
+        const ll = (p.location as any)?.latLng ?? p.location;
+        const position = {
+          lat: Number(ll?.latitude ?? ll?.lat ?? 0),
+          lng: Number(ll?.longitude ?? ll?.lng ?? 0),
+        };
+        const dist = haversineMeters({ lat, lng }, position);
+        return dist <= radiusMeters;
+      });
+      console.log('[Bank/ATM] raw:', raw.length, raw.slice(0, 3).map((p: PlacesNewPlace) => (typeof p.displayName === 'string' ? p.displayName : p.displayName?.text || '')));
+      // Loosen DENY regex: only exclude obvious non-bank/atm
+      const BANK_DENY = new RegExp(
+        [
+          'restaurant', 'deli', 'pizza', 'grill', 'kitchen', 'cafe', 'coffee', 'liquor', 'beer', 'wine', 'market basket', 'grocery', 'supermarket', 'pharmacy', 'drugstore', 'convenience', 'auto', 'repair', 'dealer', 'parts', 'oil', 'change', 'stationery', 'pet', 'sport', 'electronics', 'office', 'best buy', 'staples', 'dollar', 'family dollar', 'dollar general', 'dollar tree', 'gas', 'ev charging', 'shell', 'exxon', 'chevron', 'bp', 'sunoco', 'marathon', 'phillips 66', 'valero', 'circle k', 'costco', 'sam', 'speedway', 'quiktrip', 'wawa', 'racetrac', 'loves', 'pilot', 'flying j', 'gulf', 'arco', '76', 'conoco', 'sinclair', 'hess', 'irving', 'casey', 'holiday', 'sheetz', 'getgo', 'kwik trip', 'kwik fill', 'maverik', 'tesla', 'chargepoint', 'electrify america', 'evgo', 'blink', 'volta', 'greenlots', 'semaconnect', 'ev connect', 'evbox'
+        ].join('|'),
+        'i'
+      );
+      filtered = raw.filter((p: PlacesNewPlace) => {
+        const name = typeof p.displayName === 'string' ? p.displayName : p.displayName?.text || '';
+        return !BANK_DENY.test(name);
+      });
+      console.log('[Bank/ATM] filtered:', filtered.length, filtered.slice(0, 3).map((p: PlacesNewPlace) => (typeof p.displayName === 'string' ? p.displayName : p.displayName?.text || '')));
+    } else if (category === 'clothing') {
+      // Filter out pharmacies, drugstores, and unrelated chains from clothing results
+      const CLOTHING_CHAIN_DENY = new RegExp(
+        [
+          'walgreens',
+          'cvs', // fix: match 'cvs' without word boundaries or spaces
+          'rite\s*aid',
+          'dollar\s*tree',
+          'dollar\s*general',
+          'family\s*dollar',
+          'walmart',
+          'target',
+          'costco',
+          "bj'?s",
+          'sam\s*’s|sam\s*\bclub\b|sam\s*club',
+          'pharmacy',
+          'drugstore',
+          'auto',
+          'parts',
+          'oil',
+          'change',
+          'repair',
+          'dealer',
+          'staples',
+          'office',
+          'electronics',
+          'best\s*buy',
+          'pet',
+          'sport',
+          'grocery',
+          'market',
+          'supermarket',
+          'liquor',
+          'beer',
+          'wine',
+          'gas',
+          'station',
+          'convenience',
+          '7\s?-?\s?eleven',
+        ].join('|'),
+        'i'
+      );
+      filtered = raw.filter((p: PlacesNewPlace) => {
+        const name = typeof p.displayName === 'string' ? p.displayName : p.displayName?.text || '';
+        return !CLOTHING_CHAIN_DENY.test(name);
+      });
+      console.log('[Clothing] raw:', raw.length, raw.slice(0, 3).map((p: PlacesNewPlace) => (typeof p.displayName === 'string' ? p.displayName : p.displayName?.text || '')));
+    } else if (category === 'jewelry') {
+      // Post-filter for Jewelry & Accessories (if not already set above)
+      const JEWELRY_CHAIN_DENY = new RegExp(
+        [
+          'pawn',
+          'department',
+          'pharmacy',
+          'drugstore',
+          'dollar',
+          'walmart',
+          'target',
+          'costco',
+          'bj',
+          'sam',
+          'auto',
+          'parts',
+          'oil',
+          'change',
+          'repair',
+          'dealer',
+          'staples',
+          'office',
+          'electronics',
+          'pet',
+          'sport',
+          'grocery',
+          'market',
+          'supermarket',
+          'liquor',
+          'beer',
+          'wine',
+          'gas',
+          'station',
+          'convenience',
+          '7\s?-?\s?eleven',
+        ].join('|'),
+        'i'
+      );
+      filtered = raw.filter((p: PlacesNewPlace) => {
+        const name = typeof p.displayName === 'string' ? p.displayName : p.displayName?.text || '';
+        return !JEWELRY_CHAIN_DENY.test(name);
+      });
+      console.log('[Jewelry & Accessories] filtered:', filtered.length, filtered.slice(0, 3).map((p: PlacesNewPlace) => (typeof p.displayName === 'string' ? p.displayName : p.displayName?.text || '')));
+    } else {
+      // Default: fallback to generic type-based search
+      const nearbyBody = {
+        includedTypes,
+        maxResultCount: 20,
+        locationRestriction: { circle: { center: { latitude: lat, longitude: lng }, radius: radiusMeters } },
+      };
+      const resp = await fetch('https://places.googleapis.com/v1/places:searchNearby', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': API_KEY,
+          'X-Goog-FieldMask': [
+            'places.id',
+            'places.displayName',
+            'places.formattedAddress',
+            'places.location',
+            'places.primaryType',
+            'places.types',
+            'places.googleMapsUri',
+          ].join(','),
+        },
+        body: JSON.stringify(nearbyBody),
+      });
       const data = await resp.json();
       raw = Array.isArray(data?.places) ? data.places : [];
+      filtered = raw;
     }
 
-    // ---------- Post-filters ----------
-    let filtered: PlacesNewPlace[] = raw;
-
-    // Print/Ship: include any post_office or brand match
-    const isPrintShip =
-      Array.isArray(includedTypes) &&
-      includedTypes.length === 1 &&
-      includedTypes[0] === 'post_office';
-    const PRINT_SHIP_BRANDS = [
-      '(?:the[ .-]*)?ups[ .-]*store',
-      'ups',
-      'fed[ .-]*ex',
-      'office[ .-]*depot',
-      'office[ .-]*max',
-      'staples',
-    ];
-    if (isPrintShip) {
-      const brandRegex = new RegExp(PRINT_SHIP_BRANDS.join('|'), 'i');
-      filtered = raw.filter((p) => {
-        const name = typeof p.displayName === 'string' ? p.displayName : p.displayName?.text || '';
-        const hasType = (p.types || []).includes('post_office');
-        const hasBrand = brandRegex.test(name);
-        return hasType || hasBrand;
-      });
-      // Debug: if no results, log all names
-      if (filtered.length === 0 && raw.length > 0) {
-        console.warn('No Print/Ship results. Raw names:', raw.map(p => (typeof p.displayName === 'string' ? p.displayName : p.displayName?.text || '')));
-      }
-    } else if (mode === 'groceries') {
-      // STRICT: primary type must be grocery_store or supermarket; trim out convenience/deli/specialty by name
-      filtered = raw.filter((p) => {
-        const name = typeof p.displayName === 'string' ? p.displayName : p.displayName?.text || '';
-        const pt = (p.primaryType || '').toLowerCase();
-        if (pt !== 'grocery_store' && pt !== 'supermarket') return false;
-        if (CONVENIENCE_WORDS.test(name)) return false;
-        if (SPECIALTY_CUES.test(name) || NON_ASCII.test(name)) return false;
-        // Exclude if name contains "market", "shop", or "store" and matches specialty cues or non-ASCII
-        if (/market|shop|store/i.test(name) && (SPECIALTY_CUES.test(name) || NON_ASCII.test(name))) return false;
-        return true;
-      });
-    } else if (mode === 'specialty_markets') {
-      // Keep explicit specialty types…
-      let spec = raw.filter((p) => {
-        const pt = (p.primaryType || '').toLowerCase();
-        return pt === 'asian_grocery_store' || pt === 'butcher_shop';
-      });
-
-      // …and include fallback food_store/market/grocery only if the name clearly indicates specialty,
-      // while avoiding big chain supermarkets/pharmacies/convenience.
-      const extra = raw.filter((p) => {
-        const pt = (p.primaryType || '').toLowerCase();
-        if (pt === 'asian_grocery_store' || pt === 'butcher_shop') return false; // already included
-        const name = typeof p.displayName === 'string' ? p.displayName : p.displayName?.text || '';
-        if (CHAIN_DENY.test(name)) return false;
-        if (CONVENIENCE_WORDS.test(name)) return false;
-        // Exclude if name or types match food service or unrelated
-        if (EXCLUDE_FOOD_SERVICE.test(name)) return false;
-        if ((p.types || []).some(t => EXCLUDE_FOOD_SERVICE.test(t))) return false;
-        // pick up international/specialty cues or non-ASCII names
-        return SPECIALTY_CUES.test(name) || NON_ASCII.test(name);
-      });
-
-      filtered = [...spec, ...extra];
-    }
+    // --- Remove all redundant post-filters: only the selected block's filter logic runs ---
 
     // Map to client shape + pre-rank by straight-line distance
     const places = filtered
-      .map((p) => {
+      .map((p: PlacesNewPlace) => {
         const ll = (p.location as any)?.latLng ?? p.location;
         const position = {
           lat: Number(ll?.latitude ?? ll?.lat ?? 0),
