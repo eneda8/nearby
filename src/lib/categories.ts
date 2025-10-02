@@ -78,7 +78,7 @@ export const CATEGORIES: CatMap = [
     subs: [
       { key: 'clothing', label: 'Clothing', types: ['clothing_store'] },
       { key: 'shoes', label: 'Shoes', types: ['shoe_store'] },
-      { key: 'jewelry', label: 'Jewelry & Accessories', types: ['store'] },
+      { key: 'jewelry', label: 'Jewelry & Accessories', types: ['jewelry_store']},
       { key: 'department', label: 'Department Stores', types: ['department_store'] },
       { key: 'discount', label: 'Discount & Thrift Stores', types: ['discount_store', 'thrift_store', 'variety_store', 'other_store'] },
       { key: 'big_box', label: 'Big Box & Warehouse', types: ['warehouse_store', 'superstore', 'wholesale_store', 'supermarket'] },
