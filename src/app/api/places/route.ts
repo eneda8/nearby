@@ -1,3 +1,17 @@
+// Utility to log category results in a consistent way
+function LogCategory(label: string, places: PlacesNewPlace[]) {
+  console.log(
+    label,
+    places.length,
+    places
+      .slice(0, 3)
+      .map((p: PlacesNewPlace) =>
+        typeof p.displayName === "string"
+          ? p.displayName
+          : p.displayName?.text || ""
+      )
+  );
+}
 // src/app/api/places/route.ts
 import { NextRequest, NextResponse } from "next/server";
 
@@ -8,7 +22,8 @@ import {
   BANK_DENY,
   CLOTHING_CHAIN_DENY,
   JEWELRY_CHAIN_DENY,
-} from "./denyRegex";
+} from "./RegularExpressions";
+import { FilterService } from "./FilterService";
 import { fetchNearby, fetchTextQuery } from "./googlePlacesUtil";
 import {
   OFFICE_SUPLY_BRANDS,
@@ -36,196 +51,13 @@ function haversineMeters(
   return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
 }
 
-// ------------ Heuristics (names) ------------
-const NON_ASCII = /[^\x00-\x7F]/;
+import {
+  NON_ASCII,
+  CONVENIENCE_WORDS,
+  SPECIALTY_CUES,
+} from "./RegularExpressions";
 
-const CONVENIENCE_WORDS = new RegExp(
-  [
-    "7\\s?-?\\s?eleven",
-    "mini\\s?mart",
-    "mart\\b",
-    "liquor",
-    "pharmacy",
-    "drugstore",
-    "deli",
-    "bodega",
-    "tobacco",
-    "smoke",
-    "vape",
-    "grill",
-    "kitchen",
-    "cafe",
-    "coffee",
-    "restaurant",
-    "pizza",
-    "gas",
-    "fuel",
-    "quick\\s?shop",
-    "quick\\s?stop",
-  ].join("|"),
-  "i"
-);
-
-// DENY regexps moved to denyRegex.ts
-
-// “Specialty” cues for ethnic/international markets
-const SPECIALTY_CUES = new RegExp(
-  [
-    "international",
-    "world",
-    "african",
-    "asian",
-    "indian",
-    "middle\\s*eastern",
-    "halal",
-    "kosher",
-    "latin",
-    "balkan",
-    "bosn",
-    "himalay",
-    "european",
-    "caribbean",
-    "polish",
-    "russian",
-    "ukrain",
-    "mexican",
-    "italian",
-    "spanish",
-    "turkish",
-    "greek",
-    "japanese",
-    "korean",
-    "thai",
-    "vietnam",
-    "filipino",
-    "persian",
-    "arab",
-    "ethiop",
-    "somali",
-    "jamaic",
-    "trinidad",
-    "pakist",
-    "bangla",
-    "nepal",
-    "sri\\s*lanka",
-    "brazil",
-    "argentin",
-    "peru",
-    "colomb",
-    "cuban",
-    "puerto\\s*ric",
-    // Added cues for cheese, pasta, fish, meat, bakery, deli, etc.
-    "cheese",
-    "pasta",
-    "fish",
-    "meat",
-    "butcher",
-    "seafood",
-    "bakery",
-    "deli",
-    "gourmet",
-    "artisan",
-    "organic",
-    "natural",
-    "farmers",
-    "produce",
-    "olive oil",
-    "spice",
-    "tea",
-    "wine",
-    "liquor",
-    "beer",
-    "sausage",
-    "smokehouse",
-    "charcuterie",
-    "salumeria",
-    "fromager",
-    "pescader",
-    "carnicer",
-    "panader",
-    "pasteler",
-    "formagger",
-    "caseific",
-    "boucher",
-    "poissonner",
-    "alimentari",
-    "mercado",
-    "mercato",
-    "delicatessen",
-    "provision",
-    "fine food",
-    "specialty food",
-    "speciality food",
-    "specialty market",
-    "speciality market",
-  ].join("|"),
-  "i"
-);
-
-// Exclude food service and unrelated types from specialty markets
-const EXCLUDE_FOOD_SERVICE = new RegExp(
-  [
-    "restaurant",
-    "cafe",
-    "sandwich",
-    "grill",
-    "pizza",
-    "bar",
-    "pub",
-    "bistro",
-    "diner",
-    "steak",
-    "burger",
-    "chicken",
-    "bbq",
-    "wing",
-    "tavern",
-    "cantina",
-    "taqueria",
-    "pizzeria",
-    "trattoria",
-    "ristorante",
-    "gastropub",
-    "brewery",
-    "wine bar",
-    "coffee",
-    "tea house",
-    "meal_takeaway",
-    "meal_delivery",
-    "fast food",
-    "food court",
-    "food truck",
-    "food stand",
-    "food delivery",
-    "food service",
-    "aquarium",
-    "pet shop",
-    "pet store",
-    "pet supply",
-    "pet supplies",
-    "animal",
-    "dog",
-    "cat",
-    "veterinary",
-    "vet",
-    "grooming",
-    "boarding",
-    "kennel",
-    "zoo",
-    "wildlife",
-    "fish tank",
-    "fish aquarium",
-    "aquatic",
-    "aquatics",
-    "aquarist",
-    "aquascape",
-    "aquascaping",
-    "beer",
-  ].join("|"),
-  "i"
-);
-
-type PlacesNewPlace = {
+export type PlacesNewPlace = {
   id: string;
   displayName?: { text?: string } | string;
   formattedAddress?: string;
@@ -320,7 +152,7 @@ export async function POST(req: NextRequest) {
       includedTypes.length === 1 &&
       includedTypes[0] === "clothing_store"
     ) {
-      category = "clothing";
+      category = "clothing_store";
     } else if (
       includedTypes.length === 1 &&
       includedTypes[0] === "jewelry_and_accessories"
@@ -386,17 +218,7 @@ export async function POST(req: NextRequest) {
         return dist <= radiusMeters;
       });
       filtered = raw;
-      console.log(
-        "[Print/Ship] raw:",
-        raw.length,
-        raw
-          .slice(0, 3)
-          .map((p: PlacesNewPlace) =>
-            typeof p.displayName === "string"
-              ? p.displayName
-              : p.displayName?.text || ""
-          )
-      );
+      LogCategory("[Print/Ship] raw:", raw);
     } else if (category === "print_ship_and_others") {
       // Run print/ship logic
       // 1. Search for post_office
@@ -480,17 +302,7 @@ export async function POST(req: NextRequest) {
         return dist <= radiusMeters;
       });
       filtered = raw;
-      console.log(
-        "[Print/Ship+Other] raw:",
-        raw.length,
-        raw
-          .slice(0, 3)
-          .map((p: PlacesNewPlace) =>
-            typeof p.displayName === "string"
-              ? p.displayName
-              : p.displayName?.text || ""
-          )
-      );
+      LogCategory("[Print/Ship+Other] raw:", raw);
     } else if (category === "groceries") {
       // --- Groceries: strict logic ---
       const groceriesBody = {
@@ -509,33 +321,8 @@ export async function POST(req: NextRequest) {
         ? data.places
         : [];
       raw = typeResults;
-      filtered = raw.filter((p: PlacesNewPlace) => {
-        const name =
-          typeof p.displayName === "string"
-            ? p.displayName
-            : p.displayName?.text || "";
-        const pt = (p.primaryType || "").toLowerCase();
-        if (pt !== "grocery_store" && pt !== "supermarket") return false;
-        if (CONVENIENCE_WORDS.test(name)) return false;
-        if (SPECIALTY_CUES.test(name) || NON_ASCII.test(name)) return false;
-        if (
-          /market|shop|store/i.test(name) &&
-          (SPECIALTY_CUES.test(name) || NON_ASCII.test(name))
-        )
-          return false;
-        return true;
-      });
-      console.log(
-        "[Groceries] filtered:",
-        filtered.length,
-        filtered
-          .slice(0, 3)
-          .map((p: PlacesNewPlace) =>
-            typeof p.displayName === "string"
-              ? p.displayName
-              : p.displayName?.text || ""
-          )
-      );
+      filtered = FilterService.filterGroceries(raw);
+      LogCategory("[Groceries] filtered:", filtered);
     } else if (category === "specialty_markets") {
       // 1. Type-based search (as before)
       const nearbyBody = {
@@ -741,17 +528,7 @@ export async function POST(req: NextRequest) {
         const dist = haversineMeters({ lat, lng }, position);
         return dist <= radiusMeters;
       });
-      console.log(
-        "[Specialty Markets] raw:",
-        raw.length,
-        raw
-          .slice(0, 3)
-          .map((p: PlacesNewPlace) =>
-            typeof p.displayName === "string"
-              ? p.displayName
-              : p.displayName?.text || ""
-          )
-      );
+      LogCategory("[Specialty Markets] raw:", raw);
     } else if (category === "pharmacy") {
       // 1. Type-based search (include both pharmacy and drugstore types)
       const nearbyBody = {
@@ -804,36 +581,10 @@ export async function POST(req: NextRequest) {
         const dist = haversineMeters({ lat, lng }, position);
         return dist <= radiusMeters;
       });
-      console.log(
-        "[Pharmacy] raw:",
-        raw.length,
-        raw
-          .slice(0, 3)
-          .map((p: PlacesNewPlace) =>
-            typeof p.displayName === "string"
-              ? p.displayName
-              : p.displayName?.text || ""
-          )
-      );
+      LogCategory("[Pharmacy] raw:", raw);
       // PHARMACY_DENY imported from denyRegex.ts
-      filtered = raw.filter((p: PlacesNewPlace) => {
-        const name =
-          typeof p.displayName === "string"
-            ? p.displayName
-            : p.displayName?.text || "";
-        return !PHARMACY_DENY.test(name);
-      });
-      console.log(
-        "[Pharmacy] filtered:",
-        filtered.length,
-        filtered
-          .slice(0, 3)
-          .map((p: PlacesNewPlace) =>
-            typeof p.displayName === "string"
-              ? p.displayName
-              : p.displayName?.text || ""
-          )
-      );
+      filtered = FilterService.filterPharmacy(raw);
+      LogCategory("[Pharmacy] filtered:", filtered);
     } else if (category === "gas_ev") {
       // 1. Type-based search (include both gas_station and ev_charging_station)
       const nearbyBody = {
@@ -886,36 +637,10 @@ export async function POST(req: NextRequest) {
         const dist = haversineMeters({ lat, lng }, position);
         return dist <= radiusMeters;
       });
-      console.log(
-        "[Gas/EV] raw:",
-        raw.length,
-        raw
-          .slice(0, 3)
-          .map((p: PlacesNewPlace) =>
-            typeof p.displayName === "string"
-              ? p.displayName
-              : p.displayName?.text || ""
-          )
-      );
+      LogCategory("[Gas/EV] raw:", raw);
       // GAS_DENY imported from denyRegex.ts
-      filtered = raw.filter((p: PlacesNewPlace) => {
-        const name =
-          typeof p.displayName === "string"
-            ? p.displayName
-            : p.displayName?.text || "";
-        return !GAS_DENY.test(name);
-      });
-      console.log(
-        "[Gas/EV] filtered:",
-        filtered.length,
-        filtered
-          .slice(0, 3)
-          .map((p: PlacesNewPlace) =>
-            typeof p.displayName === "string"
-              ? p.displayName
-              : p.displayName?.text || ""
-          )
-      );
+      filtered = FilterService.filterGasEv(raw);
+      LogCategory("[Gas/EV] filtered:", filtered);
     } else if (category === "bank_atm") {
       // 1. Type-based search (include both bank and atm types)
       const nearbyBody = {
@@ -968,76 +693,18 @@ export async function POST(req: NextRequest) {
         const dist = haversineMeters({ lat, lng }, position);
         return dist <= radiusMeters;
       });
-      console.log(
-        "[Bank/ATM] raw:",
-        raw.length,
-        raw
-          .slice(0, 3)
-          .map((p: PlacesNewPlace) =>
-            typeof p.displayName === "string"
-              ? p.displayName
-              : p.displayName?.text || ""
-          )
-      );
+      LogCategory("[Bank/ATM] raw:", raw);
       // BANK_DENY imported from denyRegex.ts
-      filtered = raw.filter((p: PlacesNewPlace) => {
-        const name =
-          typeof p.displayName === "string"
-            ? p.displayName
-            : p.displayName?.text || "";
-        return !BANK_DENY.test(name);
-      });
-      console.log(
-        "[Bank/ATM] filtered:",
-        filtered.length,
-        filtered
-          .slice(0, 3)
-          .map((p: PlacesNewPlace) =>
-            typeof p.displayName === "string"
-              ? p.displayName
-              : p.displayName?.text || ""
-          )
-      );
+      filtered = FilterService.filterBankAtm(raw);
+      LogCategory("[Bank/ATM] filtered:", filtered);
     } else if (category === "clothing") {
       // CLOTHING_CHAIN_DENY imported from denyRegex.ts
-      filtered = raw.filter((p: PlacesNewPlace) => {
-        const name =
-          typeof p.displayName === "string"
-            ? p.displayName
-            : p.displayName?.text || "";
-        return !CLOTHING_CHAIN_DENY.test(name);
-      });
-      console.log(
-        "[Clothing] raw:",
-        raw.length,
-        raw
-          .slice(0, 3)
-          .map((p: PlacesNewPlace) =>
-            typeof p.displayName === "string"
-              ? p.displayName
-              : p.displayName?.text || ""
-          )
-      );
+      filtered = FilterService.filterClothing(raw);
+      LogCategory("[Clothing] raw:", raw);
     } else if (category === "jewelry") {
       // JEWELRY_CHAIN_DENY imported from denyRegex.ts
-      filtered = raw.filter((p: PlacesNewPlace) => {
-        const name =
-          typeof p.displayName === "string"
-            ? p.displayName
-            : p.displayName?.text || "";
-        return !JEWELRY_CHAIN_DENY.test(name);
-      });
-      console.log(
-        "[Jewelry & Accessories] filtered:",
-        filtered.length,
-        filtered
-          .slice(0, 3)
-          .map((p: PlacesNewPlace) =>
-            typeof p.displayName === "string"
-              ? p.displayName
-              : p.displayName?.text || ""
-          )
-      );
+      filtered = FilterService.filterJewelry(raw);
+      LogCategory("[Jewelry & Accessories] filtered:", filtered);
     } else {
       // Default: fallback to generic type-based search
       const nearbyBody = {
