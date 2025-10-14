@@ -1,18 +1,16 @@
-// Utility to log category results in a consistent way
-function LogCategory(label: string, places: PlacesNewPlace[]) {
-  console.log(
-    label,
-    places.length,
-    places
-      .slice(0, 3)
-      .map((p: PlacesNewPlace) =>
-        typeof p.displayName === "string"
-          ? p.displayName
-          : p.displayName?.text || ""
-      )
-  );
-}
-// src/app/api/places/route.ts
+import { logCategory } from "./lib/logCategory";
+/**
+ * @file Main API route for category-based place search using Google Places API.
+ *
+ * Flow:
+ * 1. Validates incoming request payload.
+ * 2. Infers search mode and category from includedTypes.
+ * 3. Dispatches to the appropriate category handler/service.
+ * 4. Fetches and filters places using Google Places API and service modules.
+ * 5. Shapes and returns the API response.
+ *
+ * All service and utility functions are designed to be pure and testable.
+ */
 import { NextRequest, NextResponse } from "next/server";
 
 import {
@@ -25,31 +23,30 @@ import {
 } from "./RegularExpressions";
 import { FilterService } from "./FilterService";
 import { fetchNearby, fetchTextQuery } from "./googlePlacesUtil";
+import { makeLocationRestriction } from "./lib/locationUtils";
+import { OFFICE_SUPLY_BRANDS } from "./brands";
+import { getGroceriesPlaces } from "./services/GroceriesService";
+import { getPharmacyPlaces } from "./services/PharmacyService";
+import { getGasEvPlaces } from "./services/GasEvService";
+import { getBankAtmPlaces } from "./services/BankAtmService";
+import { getClothingPlaces } from "./services/ClothingService";
+import { getJewelryPlaces } from "./services/JewelryService";
+import { getSpecialtyMarketsPlaces } from "./services/SpecialtyMarketsService";
+import { haversineMeters } from "./lib/haversineMeters";
 import {
-  OFFICE_SUPLY_BRANDS,
-  PHARMACY_BRANDS,
-  GAS_BRANDS,
-  BANK_BRANDS,
-} from "./brands";
+  validateRequestBody,
+  shapePlacesResponse,
+} from "./lib/requestResponseUtils";
+import type {
+  PlacesApiRequest,
+  PlacesApiResponse,
+  PlaceResponseItem,
+  GooglePlacesRaw,
+} from "./types/apiTypes";
 
 const API_KEY = process.env.GOOGLE_MAPS_API_KEY_SERVER;
 
 // Straight-line distance (meters) for pre-sorting
-function haversineMeters(
-  a: { lat: number; lng: number },
-  b: { lat: number; lng: number }
-) {
-  const R = 6371000;
-  const toRad = (d: number) => (d * Math.PI) / 180;
-  const dLat = toRad(b.lat - a.lat);
-  const dLng = toRad(b.lng - a.lng);
-  const lat1 = toRad(a.lat);
-  const lat2 = toRad(b.lat);
-  const h =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
-  return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
-}
 
 import {
   NON_ASCII,
@@ -57,20 +54,15 @@ import {
   SPECIALTY_CUES,
 } from "./RegularExpressions";
 
-export type PlacesNewPlace = {
-  id: string;
-  displayName?: { text?: string } | string;
-  formattedAddress?: string;
-  location?:
-    | { latLng?: { latitude?: number; longitude?: number } }
-    | { latitude?: number; longitude?: number };
-  primaryType?: string;
-  types?: string[];
-  googleMapsUri?: string;
-};
+// Deprecated: use GooglePlacesRaw and PlaceResponseItem from apiTypes.ts
+export type PlacesNewPlace = GooglePlacesRaw;
 
-// Infer “mode” by the includedTypes set the client sent (keeps page.tsx unchanged)
-function inferMode(
+/**
+ * Infers the search mode from the includedTypes array.
+ * @param includedTypes - Array of place types requested by the client.
+ * @returns The inferred mode: 'groceries', 'specialty_markets', or 'generic'.
+ */
+export function inferMode(
   includedTypes: string[]
 ): "groceries" | "specialty_markets" | "generic" {
   const set = new Set(includedTypes);
@@ -88,11 +80,22 @@ function inferMode(
   return "generic";
 }
 
-// Helper to check if includedTypes contains any of a set of types
-function hasAnyType(includedTypes: string[], types: string[]): boolean {
+/**
+ * Checks if includedTypes contains any of the provided types.
+ * @param includedTypes - Array of place types requested by the client.
+ * @param types - Array of types to check for.
+ * @returns True if any type is present, false otherwise.
+ */
+export function hasAnyType(includedTypes: string[], types: string[]): boolean {
   return types.some((t) => includedTypes.includes(t));
 }
 
+/**
+ * Main POST handler for /api/places.
+ * Validates request, dispatches to category handler, shapes and returns response.
+ * @param req - Next.js API request object
+ * @returns NextResponse with PlacesApiResponse or error
+ */
 export async function POST(req: NextRequest) {
   try {
     if (!API_KEY) {
@@ -102,31 +105,20 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { lat, lng, radiusMeters, includedTypes } = await req.json();
-
-    if (
-      typeof lat !== "number" ||
-      typeof lng !== "number" ||
-      typeof radiusMeters !== "number"
-    ) {
-      return NextResponse.json(
-        { error: "lat, lng, radiusMeters required" },
-        { status: 400 }
-      );
-    }
-    if (!Array.isArray(includedTypes) || includedTypes.length === 0) {
-      return NextResponse.json(
-        { error: "includedTypes required" },
-        { status: 400 }
-      );
+    // --- Request validation ---
+    let lat: number, lng: number, radiusMeters: number, includedTypes: string[];
+    try {
+      const reqBody: PlacesApiRequest = validateRequestBody(await req.json());
+      ({ lat, lng, radiusMeters, includedTypes } = reqBody);
+    } catch (err: any) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
     }
 
+    // --- Category resolution ---
     const mode = inferMode(includedTypes);
-
-    // --- Centralized, mutually exclusive category routing ---
+    let category = "";
     let runPrintShip = includedTypes.includes("post_office");
     let otherTypes = includedTypes.filter((t: string) => t !== "post_office");
-    let category = "";
     if (runPrintShip && otherTypes.length === 0) {
       category = "print_ship_only";
     } else if (runPrintShip && otherTypes.length > 0) {
@@ -162,600 +154,95 @@ export async function POST(req: NextRequest) {
       category = "default";
     }
 
-    let raw: PlacesNewPlace[] = [];
-    let filtered: PlacesNewPlace[] = [];
-
-    if (category === "print_ship_only") {
-      // 1. Search for post_office
-      const postOfficeBody = {
-        includedTypes: ["post_office"],
-        maxResultCount: 20,
-        locationRestriction: {
-          circle: {
-            center: { latitude: lat, longitude: lng },
-            radius: radiusMeters,
-          },
-        },
-      };
-      const resp1 = await fetchNearby(postOfficeBody);
-      const data1 = await resp1.json();
-      const postOffices: PlacesNewPlace[] = Array.isArray(data1?.places)
-        ? data1.places
-        : [];
-
-      // 2. For each brand, do a textQuery search
-      const brandResults: PlacesNewPlace[] = [];
-      for (const brand of OFFICE_SUPLY_BRANDS) {
-        const textBody = {
-          textQuery: brand + " near " + lat + "," + lng,
-          maxResultCount: 10,
-          locationBias: {
-            circle: {
-              center: { latitude: lat, longitude: lng },
-              radius: radiusMeters,
-            },
-          },
-        };
-        const resp = await fetchTextQuery(textBody);
-        const data = await resp.json();
-        if (Array.isArray(data?.places)) {
-          brandResults.push(...data.places);
-        }
-      }
-      // Merge and deduplicate by id
-      const all = [...postOffices, ...brandResults];
-      const seen = new Set<string>();
-      raw = all.filter((p: PlacesNewPlace) => {
-        if (!p.id || seen.has(p.id)) return false;
-        seen.add(p.id);
-        // Filter by actual distance from center
-        const ll = (p.location as any)?.latLng ?? p.location;
-        const position = {
-          lat: Number(ll?.latitude ?? ll?.lat ?? 0),
-          lng: Number(ll?.longitude ?? ll?.lng ?? 0),
-        };
-        const dist = haversineMeters({ lat, lng }, position);
-        return dist <= radiusMeters;
-      });
-      filtered = raw;
-      LogCategory("[Print/Ship] raw:", raw);
-    } else if (category === "print_ship_and_others") {
-      // Run print/ship logic
-      // 1. Search for post_office
-      const postOfficeBody = {
-        includedTypes: ["post_office"],
-        maxResultCount: 20,
-        locationRestriction: {
-          circle: {
-            center: { latitude: lat, longitude: lng },
-            radius: radiusMeters,
-          },
-        },
-      };
-      const resp1 = await fetchNearby(postOfficeBody);
-      const data1 = await resp1.json();
-      const postOffices: PlacesNewPlace[] = Array.isArray(data1?.places)
-        ? data1.places
-        : [];
-      // 2. For each brand, do a textQuery search
-      const brandResults: PlacesNewPlace[] = [];
-      for (const brand of OFFICE_SUPLY_BRANDS) {
-        const textBody = {
-          textQuery: brand + " near " + lat + "," + lng,
-          maxResultCount: 10,
-          locationBias: {
-            circle: {
-              center: { latitude: lat, longitude: lng },
-              radius: radiusMeters,
-            },
-          },
-        };
-        const resp = await fetchTextQuery(textBody);
-        const data = await resp.json();
-        if (Array.isArray(data?.places)) {
-          brandResults.push(...data.places);
-        }
-      }
-      // Merge and deduplicate by id
-      const printShipAll = [...postOffices, ...brandResults];
-      const seen = new Set<string>();
-      const printShipRaw = printShipAll.filter((p: PlacesNewPlace) => {
-        if (!p.id || seen.has(p.id)) return false;
-        seen.add(p.id);
-        const ll = (p.location as any)?.latLng ?? p.location;
-        const position = {
-          lat: Number(ll?.latitude ?? ll?.lat ?? 0),
-          lng: Number(ll?.longitude ?? ll?.lng ?? 0),
-        };
-        const dist = haversineMeters({ lat, lng }, position);
-        return dist <= radiusMeters;
-      });
-      // Now run the default logic for the other types (excluding post_office)
-      let otherRaw: PlacesNewPlace[] = [];
-      if (otherTypes.length > 0) {
+    // --- Category dispatcher ---
+    /**
+     * Category handler dispatcher.
+     * Maps category string to async handler function.
+     * Each handler is pure and testable.
+     */
+    const categoryHandlers: Record<
+      string,
+      (params: {
+        lat: number;
+        lng: number;
+        radiusMeters: number;
+        includedTypes?: string[];
+      }) => Promise<GooglePlacesRaw[]>
+    > = {
+      groceries: async ({ lat, lng, radiusMeters }) =>
+        getGroceriesPlaces(lat, lng, radiusMeters),
+      specialty_markets: async ({ lat, lng, radiusMeters, includedTypes }) =>
+        getSpecialtyMarketsPlaces(lat, lng, radiusMeters, includedTypes ?? []),
+      pharmacy: async ({ lat, lng, radiusMeters }) =>
+        getPharmacyPlaces(lat, lng, radiusMeters),
+      gas_ev: async ({ lat, lng, radiusMeters }) =>
+        getGasEvPlaces(lat, lng, radiusMeters),
+      bank_atm: async ({ lat, lng, radiusMeters }) =>
+        getBankAtmPlaces(lat, lng, radiusMeters),
+      clothing_store: async ({ lat, lng, radiusMeters }) => {
         const nearbyBody = {
-          includedTypes: otherTypes,
+          includedTypes: ["clothing_store"],
           maxResultCount: 20,
-          locationRestriction: {
-            circle: {
-              center: { latitude: lat, longitude: lng },
-              radius: radiusMeters,
-            },
-          },
+          locationRestriction: makeLocationRestriction(lat, lng, radiusMeters),
         };
         const resp = await fetchNearby(nearbyBody);
         const data = await resp.json();
-        otherRaw = Array.isArray(data?.places) ? data.places : [];
-      }
-      // Merge and dedupe printShipRaw and otherRaw
-      const all = [...printShipRaw, ...otherRaw];
-      const seen2 = new Set<string>();
-      raw = all.filter((p: PlacesNewPlace) => {
-        if (!p.id || seen2.has(p.id)) return false;
-        seen2.add(p.id);
-        const ll = (p.location as any)?.latLng ?? p.location;
-        const position = {
-          lat: Number(ll?.latitude ?? ll?.lat ?? 0),
-          lng: Number(ll?.longitude ?? ll?.lng ?? 0),
+        const raw = Array.isArray(data?.places) ? data.places : [];
+        return getClothingPlaces(raw);
+      },
+      jewelry: async ({ lat, lng, radiusMeters }) => {
+        const nearbyBody = {
+          includedTypes: ["jewelry_and_accessories"],
+          maxResultCount: 20,
+          locationRestriction: makeLocationRestriction(lat, lng, radiusMeters),
         };
-        const dist = haversineMeters({ lat, lng }, position);
-        return dist <= radiusMeters;
-      });
-      filtered = raw;
-      LogCategory("[Print/Ship+Other] raw:", raw);
-    } else if (category === "groceries") {
-      // --- Groceries: strict logic ---
-      const groceriesBody = {
-        includedTypes: ["grocery_store", "supermarket"],
-        maxResultCount: 20,
-        locationRestriction: {
-          circle: {
-            center: { latitude: lat, longitude: lng },
-            radius: radiusMeters,
-          },
-        },
-      };
-      const resp = await fetchNearby(groceriesBody);
-      const data = await resp.json();
-      const typeResults: PlacesNewPlace[] = Array.isArray(data?.places)
-        ? data.places
-        : [];
-      raw = typeResults;
-      filtered = FilterService.filterGroceries(raw);
-      LogCategory("[Groceries] filtered:", filtered);
-    } else if (category === "specialty_markets") {
-      // 1. Type-based search (as before)
-      const nearbyBody = {
-        includedTypes,
-        maxResultCount: 20,
-        locationRestriction: {
-          circle: {
-            center: { latitude: lat, longitude: lng },
-            radius: radiusMeters,
-          },
-        },
-      };
-      const resp = await fetchNearby(nearbyBody);
-      const data = await resp.json();
-      const typeResults: PlacesNewPlace[] = Array.isArray(data?.places)
-        ? data.places
-        : [];
+        const resp = await fetchNearby(nearbyBody);
+        const data = await resp.json();
+        const raw = Array.isArray(data?.places) ? data.places : [];
+        return getJewelryPlaces(raw);
+      },
+      default: async ({ lat, lng, radiusMeters, includedTypes }) => {
+        const nearbyBody = {
+          includedTypes: includedTypes ?? [],
+          maxResultCount: 20,
+          locationRestriction: makeLocationRestriction(lat, lng, radiusMeters),
+        };
+        const resp = await fetchNearby(nearbyBody);
+        const data = await resp.json();
+        return Array.isArray(data?.places) ? data.places : [];
+      },
+    };
 
-      // 2. TextQuery for specialty cues (expanded and run in parallel)
-      const SPECIALTY_MARKET_QUERIES = [
-        "african market",
-        "asian market",
-        "balkan market",
-        "himalayan market",
-        "international market",
-        "latin market",
-        "european market",
-        "caribbean market",
-        "polish market",
-        "russian market",
-        "mexican market",
-        "italian market",
-        "spanish market",
-        "turkish market",
-        "greek market",
-        "japanese market",
-        "korean market",
-        "thai market",
-        "vietnamese market",
-        "filipino market",
-        "persian market",
-        "arab market",
-        "ethiopian market",
-        "jamaican market",
-        "indian market",
-        "halal market",
-        "kosher market",
-        "bosna store",
-        "himalayas store",
-        "el parcero market",
-        "pasta & cheese shop",
-        // Expanded for cheese, pasta, fish, meat, bakery, deli, etc.
-        "cheese shop",
-        "pasta shop",
-        "fish market",
-        "meat market",
-        "butcher shop",
-        "seafood market",
-        "bakery",
-        "deli",
-        "gourmet market",
-        "italian deli",
-        "french bakery",
-        "german market",
-        "greek deli",
-        "spanish deli",
-        "middle eastern market",
-        "eastern european market",
-        "asian grocery",
-        "latin grocery",
-        "caribbean grocery",
-        "halal grocery",
-        "kosher grocery",
-        "specialty food",
-        "specialty grocery",
-        "fine foods",
-        "artisan market",
-        "organic market",
-        "natural foods",
-        "farmers market",
-        "produce market",
-        "olive oil shop",
-        "spice shop",
-        "tea shop",
-        "coffee shop",
-        "wine shop",
-        "liquor store",
-        "beer store",
-        "sausage shop",
-        "smokehouse",
-        "charcuterie",
-        "salumeria",
-        "fromagerie",
-        "pescaderia",
-        "carniceria",
-        "panaderia",
-        "pasteleria",
-        "formaggeria",
-        "caseificio",
-        "boucherie",
-        "poissonnerie",
-        "alimentari",
-        "mercado",
-        "mercato",
-        "delicatessen",
-        "provisions",
-        "provision store",
-        "international foods",
-        "european foods",
-        "asian foods",
-        "latin foods",
-        "middle eastern foods",
-        "african foods",
-        "indian foods",
-        "balkan foods",
-        "himalayan foods",
-        "russian foods",
-        "polish foods",
-        "greek foods",
-        "turkish foods",
-        "japanese foods",
-        "korean foods",
-        "thai foods",
-        "vietnamese foods",
-        "filipino foods",
-        "persian foods",
-        "arab foods",
-        "ethiopian foods",
-        "jamaican foods",
-        "mexican foods",
-        "italian foods",
-        "spanish foods",
-        "french foods",
-        "german foods",
-        "caribbean foods",
-        "organic foods",
-        "natural foods",
-        "artisan foods",
-        "fine foods",
-        "gourmet foods",
-        "specialty foods",
-        "farmers foods",
-        "produce foods",
-        "olive oil foods",
-        "spice foods",
-        "tea foods",
-        "coffee foods",
-        "wine foods",
-        "liquor foods",
-        "beer foods",
-        "sausage foods",
-        "smokehouse foods",
-        "charcuterie foods",
-        "salumeria foods",
-        "fromagerie foods",
-        "pescaderia foods",
-        "carniceria foods",
-        "panaderia foods",
-        "pasteleria foods",
-        "formaggeria foods",
-        "caseificio foods",
-        "boucherie foods",
-        "poissonnerie foods",
-        "alimentari foods",
-        "mercado foods",
-        "mercato foods",
-        "delicatessen foods",
-        "provisions foods",
-        "provision foods",
-      ];
-      // Run all textQuery fetches in parallel
-      const textResults: PlacesNewPlace[] = [];
-      await Promise.all(
-        SPECIALTY_MARKET_QUERIES.map(async (query) => {
-          const textBody = {
-            textQuery: query + " near " + lat + "," + lng,
-            maxResultCount: 10,
-            locationBias: {
-              circle: {
-                center: { latitude: lat, longitude: lng },
-                radius: radiusMeters,
-              },
-            },
-          };
-          const resp = await fetchTextQuery(textBody);
-          const data = await resp.json();
-          if (Array.isArray(data?.places)) {
-            textResults.push(...data.places);
-          }
-        })
-      );
-      // Merge and dedupe by id, filter by radius
-      const all = [...typeResults, ...textResults];
-      const seen = new Set<string>();
-      raw = all.filter((p: PlacesNewPlace) => {
-        if (!p.id || seen.has(p.id)) return false;
-        seen.add(p.id);
-        const ll = (p.location as any)?.latLng ?? p.location;
-        const position = {
-          lat: Number(ll?.latitude ?? ll?.lat ?? 0),
-          lng: Number(ll?.longitude ?? ll?.lng ?? 0),
-        };
-        const dist = haversineMeters({ lat, lng }, position);
-        return dist <= radiusMeters;
-      });
-      LogCategory("[Specialty Markets] raw:", raw);
-    } else if (category === "pharmacy") {
-      // 1. Type-based search (include both pharmacy and drugstore types)
-      const nearbyBody = {
-        includedTypes: ["pharmacy", "drugstore"],
-        maxResultCount: 20,
-        locationRestriction: {
-          circle: {
-            center: { latitude: lat, longitude: lng },
-            radius: radiusMeters,
-          },
-        },
-      };
-      const resp = await fetchNearby(nearbyBody);
-      const data = await resp.json();
-      const typeResults: PlacesNewPlace[] = Array.isArray(data?.places)
-        ? data.places
-        : [];
-      // 2. TextQuery for major brands (run in parallel)
-      const textResults: PlacesNewPlace[] = [];
-      await Promise.all(
-        PHARMACY_BRANDS.map(async (brand: string) => {
-          const textBody = {
-            textQuery: brand + " near " + lat + "," + lng,
-            maxResultCount: 10,
-            locationBias: {
-              circle: {
-                center: { latitude: lat, longitude: lng },
-                radius: radiusMeters,
-              },
-            },
-          };
-          const resp = await fetchTextQuery(textBody);
-          const data = await resp.json();
-          if (Array.isArray(data?.places)) {
-            textResults.push(...data.places);
-          }
-        })
-      );
-      // Merge and dedupe by id, filter by radius
-      const all = [...typeResults, ...textResults];
-      const seen = new Set<string>();
-      raw = all.filter((p: PlacesNewPlace) => {
-        if (!p.id || seen.has(p.id)) return false;
-        seen.add(p.id);
-        const ll = (p.location as any)?.latLng ?? p.location;
-        const position = {
-          lat: Number(ll?.latitude ?? ll?.lat ?? 0),
-          lng: Number(ll?.longitude ?? ll?.lng ?? 0),
-        };
-        const dist = haversineMeters({ lat, lng }, position);
-        return dist <= radiusMeters;
-      });
-      LogCategory("[Pharmacy] raw:", raw);
-      // PHARMACY_DENY imported from denyRegex.ts
-      filtered = FilterService.filterPharmacy(raw);
-      LogCategory("[Pharmacy] filtered:", filtered);
-    } else if (category === "gas_ev") {
-      // 1. Type-based search (include both gas_station and ev_charging_station)
-      const nearbyBody = {
-        includedTypes: ["gas_station", "ev_charging_station"],
-        maxResultCount: 20,
-        locationRestriction: {
-          circle: {
-            center: { latitude: lat, longitude: lng },
-            radius: radiusMeters,
-          },
-        },
-      };
-      const resp = await fetchNearby(nearbyBody);
-      const data = await resp.json();
-      const typeResults: PlacesNewPlace[] = Array.isArray(data?.places)
-        ? data.places
-        : [];
-      // 2. TextQuery for major brands (run in parallel)
-      const textResults: PlacesNewPlace[] = [];
-      await Promise.all(
-        GAS_BRANDS.map(async (brand: string) => {
-          const textBody = {
-            textQuery: brand + " near " + lat + "," + lng,
-            maxResultCount: 10,
-            locationBias: {
-              circle: {
-                center: { latitude: lat, longitude: lng },
-                radius: radiusMeters,
-              },
-            },
-          };
-          const resp = await fetchTextQuery(textBody);
-          const data = await resp.json();
-          if (Array.isArray(data?.places)) {
-            textResults.push(...data.places);
-          }
-        })
-      );
-      // Merge and dedupe by id, filter by radius
-      const all = [...typeResults, ...textResults];
-      const seen = new Set<string>();
-      raw = all.filter((p: PlacesNewPlace) => {
-        if (!p.id || seen.has(p.id)) return false;
-        seen.add(p.id);
-        const ll = (p.location as any)?.latLng ?? p.location;
-        const position = {
-          lat: Number(ll?.latitude ?? ll?.lat ?? 0),
-          lng: Number(ll?.longitude ?? ll?.lng ?? 0),
-        };
-        const dist = haversineMeters({ lat, lng }, position);
-        return dist <= radiusMeters;
-      });
-      LogCategory("[Gas/EV] raw:", raw);
-      // GAS_DENY imported from denyRegex.ts
-      filtered = FilterService.filterGasEv(raw);
-      LogCategory("[Gas/EV] filtered:", filtered);
-    } else if (category === "bank_atm") {
-      // 1. Type-based search (include both bank and atm types)
-      const nearbyBody = {
-        includedTypes: ["bank", "atm"],
-        maxResultCount: 20,
-        locationRestriction: {
-          circle: {
-            center: { latitude: lat, longitude: lng },
-            radius: radiusMeters,
-          },
-        },
-      };
-      const resp = await fetchNearby(nearbyBody);
-      const data = await resp.json();
-      const typeResults: PlacesNewPlace[] = Array.isArray(data?.places)
-        ? data.places
-        : [];
-      // 2. TextQuery for major banks/ATM brands (run in parallel)
-      const textResults: PlacesNewPlace[] = [];
-      await Promise.all(
-        BANK_BRANDS.map(async (brand: string) => {
-          const textBody = {
-            textQuery: brand + " near " + lat + "," + lng,
-            maxResultCount: 10,
-            locationBias: {
-              circle: {
-                center: { latitude: lat, longitude: lng },
-                radius: radiusMeters,
-              },
-            },
-          };
-          const resp = await fetchTextQuery(textBody);
-          const data = await resp.json();
-          if (Array.isArray(data?.places)) {
-            textResults.push(...data.places);
-          }
-        })
-      );
-      // Merge and dedupe by id, filter by radius
-      const all = [...typeResults, ...textResults];
-      const seen = new Set<string>();
-      raw = all.filter((p: PlacesNewPlace) => {
-        if (!p.id || seen.has(p.id)) return false;
-        seen.add(p.id);
-        const ll = (p.location as any)?.latLng ?? p.location;
-        const position = {
-          lat: Number(ll?.latitude ?? ll?.lat ?? 0),
-          lng: Number(ll?.longitude ?? ll?.lng ?? 0),
-        };
-        const dist = haversineMeters({ lat, lng }, position);
-        return dist <= radiusMeters;
-      });
-      LogCategory("[Bank/ATM] raw:", raw);
-      // BANK_DENY imported from denyRegex.ts
-      filtered = FilterService.filterBankAtm(raw);
-      LogCategory("[Bank/ATM] filtered:", filtered);
-    } else if (category === "clothing") {
-      // CLOTHING_CHAIN_DENY imported from denyRegex.ts
-      filtered = FilterService.filterClothing(raw);
-      LogCategory("[Clothing] raw:", raw);
-    } else if (category === "jewelry") {
-      // JEWELRY_CHAIN_DENY imported from denyRegex.ts
-      filtered = FilterService.filterJewelry(raw);
-      LogCategory("[Jewelry & Accessories] filtered:", filtered);
-    } else {
-      // Default: fallback to generic type-based search
-      const nearbyBody = {
-        includedTypes,
-        maxResultCount: 20,
-        locationRestriction: {
-          circle: {
-            center: { latitude: lat, longitude: lng },
-            radius: radiusMeters,
-          },
-        },
-      };
-      const resp = await fetchNearby(nearbyBody);
-      const data = await resp.json();
-      raw = Array.isArray(data?.places) ? data.places : [];
-      filtered = raw;
-    }
+    // --- Category handler ---
+    const handler = categoryHandlers[category] || categoryHandlers["default"];
+    const filtered: GooglePlacesRaw[] = await handler({
+      lat,
+      lng,
+      radiusMeters,
+      includedTypes,
+    });
+    logCategory(`[${category}] filtered:`, filtered);
+
+    // --- Response shaping ---
+    const placesShaped: PlaceResponseItem[] = shapePlacesResponse(
+      filtered,
+      { lat, lng },
+      20
+    );
+
+    const response: PlacesApiResponse = {
+      origin: { lat, lng },
+      mode,
+      debugIncludedTypes: includedTypes,
+      places: placesShaped,
+    };
+
+    return NextResponse.json(response);
 
     // --- Remove all redundant post-filters: only the selected block's filter logic runs ---
 
     // Map to client shape + pre-rank by straight-line distance
-    const places = filtered
-      .map((p: PlacesNewPlace) => {
-        const ll = (p.location as any)?.latLng ?? p.location;
-        const position = {
-          lat: Number(ll?.latitude ?? ll?.lat ?? 0),
-          lng: Number(ll?.longitude ?? ll?.lng ?? 0),
-        };
-        return {
-          id: p.id,
-          name:
-            typeof p.displayName === "string"
-              ? p.displayName
-              : p.displayName?.text ?? "Unknown",
-          address: p.formattedAddress ?? "",
-          primaryType: p.primaryType ?? "",
-          types: p.types ?? [],
-          googleMapsUri: p.googleMapsUri ?? "",
-          location: position,
-          directDistanceMeters: haversineMeters({ lat, lng }, position),
-        };
-      })
-      .sort((a, b) => a.directDistanceMeters - b.directDistanceMeters)
-      .slice(0, 20);
-
-    return NextResponse.json({
-      origin: { lat, lng },
-      mode,
-      debugIncludedTypes: includedTypes,
-      places,
-    });
+    // ...existing code...
   } catch (err: any) {
     return NextResponse.json(
       { error: "Server error", details: String(err?.message || err) },
