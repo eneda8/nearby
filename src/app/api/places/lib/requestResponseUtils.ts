@@ -51,6 +51,9 @@ export function shapePlacesResponse(
                 origin,
                 position
               ),
+        rating: p.rating ?? undefined,
+        openNow: p.currentOpeningHours?.openNow ?? undefined,
+        currentOpeningHours: p.currentOpeningHours,
       };
     })
     .sort(

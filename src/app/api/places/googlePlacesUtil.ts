@@ -9,6 +9,8 @@ const FIELD_MASK = [
   "places.primaryType",
   "places.types",
   "places.googleMapsUri",
+  "places.rating",
+  "places.currentOpeningHours",
 ].join(",");
 
 export interface IGooglePlacesApi {

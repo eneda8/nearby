@@ -38,6 +38,17 @@ export default function HomePage() {
   // Data + selection & hover
   const [places, setPlaces] = useState<PlaceItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  // Open now toggle
+  const [openNowOnly, setOpenNowOnly] = useState(true); // default to true
+
+  // Filtered places based on openNowOnly
+  const filteredPlaces = useMemo(
+    () => (openNowOnly ? places.filter((p) => p.openNow) : places),
+    [places, openNowOnly]
+  );
+
+  // Open now toggle
   const [hoverId, setHoverId] = useState<string | null>(null);
 
   // UI state
@@ -156,7 +167,7 @@ export default function HomePage() {
           return da - db;
         });
 
-        setPlaces(items);
+  setPlaces(items);
       } catch (e: any) {
         if (e.name !== 'AbortError') setError(e.message || 'Request failed');
       } finally {
@@ -176,7 +187,7 @@ export default function HomePage() {
         <p className="text-muted-foreground">Find places near any address — map + list, with real travel times.</p>
       </header>
 
-      <section className="grid gap-4">
+  <section className="grid gap-4">
         <AddressInput
           onPlace={(place) => {
             const loc = place.geometry!.location!;
@@ -190,6 +201,23 @@ export default function HomePage() {
         <Filters selections={selections} onChange={setSelections} />
 
         <Controls onRadiusChange={setRadiusMeters} onModeChange={setMode} />
+        <div className="flex items-center gap-2 mt-2">
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <span className="text-sm">Open now only</span>
+            <button
+              type="button"
+              aria-pressed={openNowOnly}
+              onClick={() => setOpenNowOnly((v) => !v)}
+              className={`relative w-10 h-6 rounded-full transition-colors duration-200 ${openNowOnly ? 'bg-green-500' : 'bg-gray-300'}`}
+              style={{ minWidth: 40 }}
+            >
+              <span
+                className={`absolute left-0 top-0 w-6 h-6 bg-white rounded-full shadow transition-transform duration-200 ${openNowOnly ? 'translate-x-4' : ''}`}
+                style={{ transform: openNowOnly ? 'translateX(16px)' : 'none' }}
+              />
+            </button>
+          </label>
+        </div>
       </section>
 
       <section>
@@ -214,7 +242,7 @@ export default function HomePage() {
       )}
 
       <ResultsList
-        items={places}
+        items={filteredPlaces}
         selectedId={selectedId}
         onSelect={(id: string) => setSelectedId(id)}
       />

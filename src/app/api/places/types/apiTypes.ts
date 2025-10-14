@@ -14,6 +14,9 @@ export type PlacesApiResponse = {
   places: PlaceResponseItem[];
 };
 
+/**
+ * Represents a single place result returned to the client.
+ */
 export type PlaceResponseItem = {
   id: string;
   name: string;
@@ -23,9 +26,18 @@ export type PlaceResponseItem = {
   googleMapsUri: string;
   location: { lat: number; lng: number };
   directDistanceMeters: number | null;
+  rating?: number; // Star rating (0-5)
+  openNow?: boolean; // Is the place open now?
+  currentOpeningHours?: {
+    openNow?: boolean;
+    periods?: any[];
+    weekdayDescriptions?: string[];
+  };
 };
 
-// Internal type for Google Places API result (raw)
+/**
+ * Raw result from Google Places API (internal use).
+ */
 export type GooglePlacesRaw = {
   id: string;
   displayName?: { text?: string } | string;
@@ -37,4 +49,11 @@ export type GooglePlacesRaw = {
   types?: string[];
   googleMapsUri?: string;
   directDistanceMeters?: number;
+  rating?: number; // Star rating (0-5)
+  openNow?: boolean; // Is the place open now?
+  currentOpeningHours?: {
+    openNow?: boolean;
+    periods?: any[];
+    weekdayDescriptions?: string[];
+  };
 };
