@@ -87,8 +87,10 @@ export default function ResultsList({
           >
             <div className="flex items-start gap-3">
               <div
-                className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full ${
-                  active ? 'bg-slate-900 text-white' : 'bg-slate-900/5 text-slate-600'
+                className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border ${
+                  active
+                    ? 'bg-red-500 text-white border-red-500'
+                    : 'bg-red-50 text-red-500 border-red-200'
                 }`}
               >
                 <FaMapMarkerAlt className="w-3.5 h-3.5" />

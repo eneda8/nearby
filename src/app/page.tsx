@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import MapView from '@/components/map/MapView';
 import AddressInput from '@/components/search/AddressInput';
 import Controls from '@/components/search/Controls';
@@ -16,6 +16,14 @@ const DEV_ORIGIN = process.env.NEXT_PUBLIC_DEV_ORIGIN
   : null;
 
 export default function HomePage() {
+  return (
+    <Suspense fallback={null}>
+      <HomePageContent />
+    </Suspense>
+  );
+}
+
+function HomePageContent() {
   // Map origin/center (set after user picks an address)
   const [center, setCenter] = useState<{lat:number;lng:number}>(
   DEV_ORIGIN ? { lat: DEV_ORIGIN[0], lng: DEV_ORIGIN[1] } : { lat: 40.7128, lng: -74.006 }

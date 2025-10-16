@@ -29,8 +29,24 @@ const MAP_STYLE: google.maps.MapTypeStyle[] = [
   { elementType: 'labels.text.fill', stylers: [{ color: '#4b5563' }] },
   { elementType: 'labels.text.stroke', stylers: [{ color: '#ffffff' }] },
   { featureType: 'administrative', elementType: 'geometry', stylers: [{ visibility: 'off' }] },
-  { featureType: 'poi', stylers: [{ visibility: 'off' }] },
-  { featureType: 'poi.park', elementType: 'geometry', stylers: [{ color: '#d9f2d9' }] },
+  { featureType: 'poi.business', stylers: [{ visibility: 'off' }] },
+  { featureType: 'poi.medical', stylers: [{ visibility: 'off' }] },
+  { featureType: 'poi.place_of_worship', stylers: [{ visibility: 'off' }] },
+  { featureType: 'poi.school', stylers: [{ visibility: 'off' }] },
+  { featureType: 'poi.sports_complex', stylers: [{ visibility: 'off' }] },
+  {
+    featureType: 'poi.park',
+    elementType: 'geometry',
+    stylers: [
+      { visibility: 'on' },
+      { color: '#ccead2' },
+    ],
+  },
+  {
+    featureType: 'poi.park',
+    elementType: 'labels.text.fill',
+    stylers: [{ color: '#4f6f52' }],
+  },
   { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#ffffff' }] },
   { featureType: 'road', elementType: 'geometry.stroke', stylers: [{ color: '#d3d8e0' }] },
   { featureType: 'road.highway', elementType: 'geometry.fill', stylers: [{ color: '#f1f3f6' }] },
@@ -109,7 +125,6 @@ export default function MapView({
       map.setOptions({
         zoomControlOptions: { position: google.maps.ControlPosition.LEFT_BOTTOM },
         fullscreenControlOptions: { position: google.maps.ControlPosition.RIGHT_BOTTOM },
-        scaleControlOptions: { position: google.maps.ControlPosition.LEFT_BOTTOM },
       });
 
       mapRef.current = map;
