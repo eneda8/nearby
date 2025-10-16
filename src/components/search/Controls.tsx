@@ -17,11 +17,11 @@ export default function Controls({
   };
 
   return (
-    <div className="flex flex-wrap items-center gap-3">
-      <div className="flex items-center gap-2">
-        <label className="text-sm">Radius</label>
+    <div className="flex flex-wrap items-center gap-1.5">
+      <div className="flex items-center gap-1">
+        <label className="text-[11px] font-medium">Radius</label>
         <select
-          className="h-9 px-3 rounded-md border bg-background"
+          className="h-7 px-2 rounded-md border bg-background text-[11px]"
           value={miles}
           onChange={handleMilesChange}
         >

@@ -45,10 +45,10 @@ export default function AddressInput({ onPlace }: AddressInputProps) {
   }, [onPlace]);
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-1.5">
       <div className="relative">
-        <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-gray-400">
-          <svg width="18" height="18" fill="none" viewBox="0 0 24 24">
+        <span className="pointer-events-none absolute inset-y-0 left-2 flex items-center text-gray-400">
+          <svg width="14" height="14" fill="none" viewBox="0 0 24 24">
             <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
             <path stroke="currentColor" strokeWidth="2" d="M20 20l-3.65-3.65" />
           </svg>
@@ -58,10 +58,10 @@ export default function AddressInput({ onPlace }: AddressInputProps) {
           type="text"
           placeholder="Enter an address"
           autoComplete="off"
-          className="w-full h-11 rounded-lg border border-gray-300 pl-10 pr-3 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full h-8 rounded-lg border border-gray-300 pl-7 pr-2.5 text-[11px] focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
       </div>
-      <div className="text-xs opacity-60 select-none">Powered by Google</div>
+      <div className="text-[10px] opacity-60 select-none">Powered by Google</div>
     </div>
   );
 }

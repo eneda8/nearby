@@ -96,9 +96,9 @@ export default function Filters({
   }, [selections]);
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-1.5">
       {/* Main category chips */}
-      <div className="flex flex-wrap gap-2 items-center">
+      <div className="flex flex-wrap gap-1.5 items-center">
         {mainCats.map((c) => {
           const Icon = ICONS[c.key] || FaStar;
           return (
@@ -106,9 +106,9 @@ export default function Filters({
               key={c.key}
               type="button"
               onClick={() => handleParentClick(c.key)}
-              className={`h-8 px-3 rounded-full border flex items-center gap-2 text-sm transition ${c.key === parent ? 'bg-foreground text-background' : 'bg-background'}`}
+              className={`h-7 px-2.5 rounded-full border flex items-center gap-1.5 text-xs transition ${c.key === parent ? 'bg-foreground text-background' : 'bg-background'}`}
             >
-              <Icon className="w-4 h-4" />
+              <Icon className="w-3.5 h-3.5" />
               {c.label}
             </button>
           );
@@ -117,9 +117,9 @@ export default function Filters({
         <button
           type="button"
           onClick={() => setShowMore(true)}
-          className="h-8 px-3 rounded-full border flex items-center gap-2 text-sm bg-background"
+          className="h-7 px-2.5 rounded-full border flex items-center gap-1.5 text-xs bg-background"
         >
-          <FaEllipsisH className="w-4 h-4" /> More
+          <FaEllipsisH className="w-3.5 h-3.5" /> More
         </button>
         {/* Show summary chips for selected more categories */}
         {selectedMore.length > 0 && (
@@ -129,7 +129,7 @@ export default function Filters({
               const Icon = ICONS[catKey] || FaStar;
               const count = selectedMore.filter((s) => s.parent === catKey).length;
               return (
-                <span key={catKey} className="inline-flex items-center gap-1 px-2 py-1 rounded-full border text-xs bg-background">
+                <span key={catKey} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full border text-[11px] bg-background">
                   <Icon className="w-3 h-3" /> {cat?.label} ({count})
                 </span>
               );
@@ -146,7 +146,7 @@ export default function Filters({
               key={s.key}
               type="button"
               onClick={() => toggleSub(current.key, s.key)}
-              className={`h-7 px-2 rounded-full border text-xs transition ${isSelected(current.key, s.key) ? 'bg-foreground text-background' : 'bg-background'}`}
+              className={`h-6 px-1.5 rounded-full border text-[11px] transition ${isSelected(current.key, s.key) ? 'bg-foreground text-background' : 'bg-background'}`}
             >
               {s.label}
             </button>
@@ -160,7 +160,7 @@ export default function Filters({
           {selectedTokens.map((t) => (
             <span
               key={`${t.parent}:${t.subKey}`}
-              className="inline-flex items-center gap-1 h-7 px-2 rounded-full border bg-background text-xs"
+              className="inline-flex items-center gap-1 h-6 px-1.5 rounded-full border bg-background text-[11px]"
             >
               {t.label}
               <button
@@ -176,7 +176,7 @@ export default function Filters({
           <button
             type="button"
             onClick={clearAll}
-            className="ml-2 h-7 px-2 rounded-full border bg-background text-xs"
+            className="ml-2 h-6 px-1.5 rounded-full border bg-background text-[11px]"
           >
             Clear all
           </button>
@@ -218,13 +218,13 @@ export default function Filters({
               if (!cat) return null;
               return (
                 <div key={`subcats-${parentKey}`} className="mb-2">
-                  <div className="font-medium text-sm mb-1 flex items-center gap-1">
-                    {(ICONS[cat.key] || FaStar)({ className: 'w-4 h-4' })} {cat.label} Subcategories
-                  </div>
-                  <div className="flex flex-wrap gap-1">
-                    {cat.subs.map((sub) => {
-                      const isSelected = selections.some((s) => s.parent === cat.key && s.subKey === sub.key);
-                      return (
+                    <div className="font-medium text-xs mb-1 flex items-center gap-1">
+                      {(ICONS[cat.key] || FaStar)({ className: 'w-3.5 h-3.5' })} {cat.label} Subcategories
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {cat.subs.map((sub) => {
+                        const isSelected = selections.some((s) => s.parent === cat.key && s.subKey === sub.key);
+                        return (
                         <button
                           key={`${cat.key}-${sub.key}`}
                           type="button"
@@ -237,7 +237,7 @@ export default function Filters({
                               onChange([...keepOthers, { parent: cat.key, subKey: sub.key }]);
                             }
                           }}
-                          className={`h-7 px-2 rounded-full border text-xs transition ${isSelected ? 'bg-foreground text-background' : 'bg-background'}`}
+                          className={`h-6 px-1.5 rounded-full border text-[11px] transition ${isSelected ? 'bg-foreground text-background' : 'bg-background'}`}
                         >
                           {sub.label}
                         </button>

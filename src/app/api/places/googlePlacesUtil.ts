@@ -1,4 +1,6 @@
 import type { GooglePlacesRaw } from "./types/apiTypes";
+import https from "node:https";
+import { URL } from "node:url";
 
 const API_KEY = process.env.GOOGLE_MAPS_API_KEY_SERVER;
 const FIELD_MASK = [
@@ -28,26 +30,49 @@ export class GooglePlacesApi implements IGooglePlacesApi {
   }
 
   async fetchNearby(body: object): Promise<Response> {
-    return fetch("https://places.googleapis.com/v1/places:searchNearby", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Goog-Api-Key": this.apiKey,
-        "X-Goog-FieldMask": this.fieldMask,
-      },
-      body: JSON.stringify(body),
-    });
+    return this.postJson("https://places.googleapis.com/v1/places:searchNearby", body);
   }
 
   async fetchTextQuery(body: object): Promise<Response> {
-    return fetch("https://places.googleapis.com/v1/places:searchText", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Goog-Api-Key": this.apiKey,
-        "X-Goog-FieldMask": this.fieldMask,
-      },
-      body: JSON.stringify(body),
+    return this.postJson("https://places.googleapis.com/v1/places:searchText", body);
+  }
+
+  private async postJson(url: string, body: object): Promise<Response> {
+    const payload = JSON.stringify(body);
+    const endpoint = new URL(url);
+
+    return new Promise((resolve, reject) => {
+      const request = https.request(
+        {
+          hostname: endpoint.hostname,
+          path: endpoint.pathname + endpoint.search,
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Content-Length": Buffer.byteLength(payload),
+            "X-Goog-Api-Key": this.apiKey,
+            "X-Goog-FieldMask": this.fieldMask,
+          },
+        },
+        (res) => {
+          const chunks: Buffer[] = [];
+          res.on("data", (chunk) => chunks.push(chunk));
+          res.on("end", () => {
+            const buffer = Buffer.concat(chunks);
+            const text = buffer.toString("utf8");
+            resolve(
+              new Response(text, {
+                status: res.statusCode ?? 500,
+                headers: res.headers as any,
+              })
+            );
+          });
+        }
+      );
+
+      request.on("error", reject);
+      request.write(payload);
+      request.end();
     });
   }
 }

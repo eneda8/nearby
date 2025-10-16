@@ -6,6 +6,7 @@ import AddressInput from '@/components/search/AddressInput';
 import Controls from '@/components/search/Controls';
 import ResultsList, { PlaceItem } from '@/components/search/ResultsList';
 import Filters, { type Selection } from '@/components/search/Filters';
+import Toggle from '@/components/ui/Toggle';
 import { CATEGORIES } from '@/lib/categories';
 
 const DEV_ORIGIN = process.env.NEXT_PUBLIC_DEV_ORIGIN
@@ -48,16 +49,20 @@ export default function HomePage() {
   );
 
   // Open now toggle
-  const [hoverId, setHoverId] = useState<string | null>(null);
-
   // UI state
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Map markers
   const markers = useMemo(
-    () => places.map((p) => ({ id: p.id, position: p.location, label: p.name, link: p.googleMapsUri })),
-    [places]
+    () =>
+      filteredPlaces.map((p) => ({
+        id: p.id,
+        position: p.location,
+        label: p.name,
+        link: p.googleMapsUri,
+      })),
+    [filteredPlaces]
   );
 
   useEffect(() => {
@@ -93,17 +98,28 @@ export default function HomePage() {
         let items: PlaceItem[] = (await res.json()).places || [];
 
         // 2) Route Matrix for top N (travel time + distance)
-        const top = items.slice(0, 15);
-        const destinations = top
-          .map((p) => p.location)
-          .filter(
-            (loc) =>
-              loc &&
-              typeof loc.lat === 'number' &&
-              Number.isFinite(loc.lat) &&
-              typeof loc.lng === 'number' &&
-              Number.isFinite(loc.lng)
-          );
+        const candidateMap = new Map<string, PlaceItem>();
+        items.slice(0, 20).forEach((item) => candidateMap.set(item.id, item));
+        items
+          .filter((item) => item.openNow)
+          .slice(0, 20)
+          .forEach((item) => candidateMap.set(item.id, item));
+
+        const targetItems: PlaceItem[] = [];
+        const destinations: Array<{ lat: number; lng: number }> = [];
+        Array.from(candidateMap.values()).forEach((item) => {
+          const loc = item.location;
+          if (
+            loc &&
+            typeof loc.lat === 'number' &&
+            Number.isFinite(loc.lat) &&
+            typeof loc.lng === 'number' &&
+            Number.isFinite(loc.lng)
+          ) {
+            targetItems.push(item);
+            destinations.push({ lat: loc.lat, lng: loc.lng });
+          }
+        });
 
         if (destinations.length > 0) {
           const res2 = await fetch('/api/route-matrix', {
@@ -129,7 +145,7 @@ export default function HomePage() {
 
             elements?.forEach((el: any) => {
               const idx = Number(el.destinationIndex);
-              if (!Number.isInteger(idx) || !top[idx]) return;
+              if (!Number.isInteger(idx) || !targetItems[idx]) return;
 
               const mode = typeof el.travelMode === 'string' ? el.travelMode.toUpperCase() : undefined;
 
@@ -144,32 +160,31 @@ export default function HomePage() {
 
               const distanceMeters = typeof el.distanceMeters === 'number' ? el.distanceMeters : undefined;
 
+              const target = targetItems[idx];
               if (mode === 'DRIVE') {
-                if (durSec != null) top[idx].driveDurationSec = durSec;
+                if (durSec != null) target.driveDurationSec = durSec;
                 if (distanceMeters != null) {
-                  top[idx].driveDistanceMeters = distanceMeters;
-                  top[idx].distanceMeters = distanceMeters;
+                  target.driveDistanceMeters = distanceMeters;
+                  target.distanceMeters = distanceMeters;
                 }
               } else if (mode === 'WALK') {
-                if (durSec != null) top[idx].walkDurationSec = durSec;
+                if (durSec != null) target.walkDurationSec = durSec;
                 if (distanceMeters != null) {
-                  top[idx].walkDistanceMeters = distanceMeters;
-                  if (top[idx].distanceMeters == null) {
-                    top[idx].distanceMeters = distanceMeters;
+                  target.walkDistanceMeters = distanceMeters;
+                  if (target.distanceMeters == null) {
+                    target.distanceMeters = distanceMeters;
                   }
                 }
               } else {
-                if (durSec != null && top[idx].driveDurationSec == null) {
-                  top[idx].driveDurationSec = durSec;
+                if (durSec != null && target.driveDurationSec == null) {
+                  target.driveDurationSec = durSec;
                 }
-                if (distanceMeters != null && top[idx].distanceMeters == null) {
-                  top[idx].distanceMeters = distanceMeters;
+                if (distanceMeters != null && target.distanceMeters == null) {
+                  target.distanceMeters = distanceMeters;
                 }
               }
             });
 
-            // Merge back
-            items = [...top, ...items.slice(15)];
           } else {
             // Keep items without minutes; we’ll show distance-only message below
             // eslint-disable-next-line no-console
@@ -206,26 +221,21 @@ export default function HomePage() {
     return () => controller.abort();
   }, [center, radiusMeters, haveOrigin, includedTypes]);
 
-  const hasAnyDuration = useMemo(
-    () => places.some((p) => typeof p.driveDurationSec === 'number' || typeof p.walkDurationSec === 'number'),
-    [places]
-  );
-
   return (
-    <main className="min-h-screen bg-[#f7f5f2] py-6 px-4 sm:px-6 lg:px-10 xl:px-14">
-      <div className="w-full max-w-7xl mx-auto">
-        <header className="flex items-center justify-between mb-6">
+    <main className="min-h-screen bg-[#f7f5f2] py-5 px-3 sm:px-6 lg:px-9 xl:px-12 text-[13px]">
+      <div className="w-full max-w-6xl mx-auto">
+        <header className="flex items-center justify-between mb-4">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Nearby</h1>
+            <h1 className="text-xl font-bold tracking-tight">Nearby</h1>
           </div>
         </header>
 
-        <div className="text-sm text-gray-600 mb-3">
+        <div className="text-[11px] text-gray-600 mb-2">
           Select a radius and category to see what's nearby this address.
         </div>
 
         {/* Search bar */}
-        <div className="bg-white rounded-xl shadow border p-4 mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between lg:gap-8">
+        <div className="bg-white rounded-xl shadow border p-2.5 mb-2.5 flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between lg:gap-3.5">
           <div className="flex-1 min-w-0">
             <AddressInput onPlace={(place) => {
               const loc = place.geometry!.location!;
@@ -234,55 +244,25 @@ export default function HomePage() {
               setSelectedId(null);
             }} />
           </div>
-          <div className="flex flex-wrap gap-4 items-center lg:justify-end">
+          <div className="flex flex-wrap gap-2.5 items-center lg:justify-end">
             <Controls onRadiusChange={setRadiusMeters} />
-            <div className="flex items-center gap-2">
-              <span className="text-sm whitespace-nowrap">Open now only</span>
-              <button
-                type="button"
-                aria-pressed={openNowOnly}
-                onClick={() => setOpenNowOnly((v) => !v)}
-                className={`relative w-10 h-6 rounded-full transition-colors duration-200 ${openNowOnly ? 'bg-green-500' : 'bg-gray-300'}`}
-                style={{ minWidth: 40 }}
-              >
-                <span
-                  className={`absolute left-0 top-0 w-6 h-6 bg-white rounded-full shadow transition-transform duration-200 ${openNowOnly ? 'translate-x-4' : ''}`}
-                  style={{ transform: openNowOnly ? 'translateX(16px)' : 'none' }}
-                />
-              </button>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] font-medium whitespace-nowrap">Open now only</span>
+              <Toggle checked={openNowOnly} onChange={setOpenNowOnly} />
             </div>
           </div>
         </div>
 
         {/* Interactive Filters */}
-        <div className="bg-white rounded-xl shadow border p-4 mb-4">
+        <div className="bg-white rounded-xl shadow border p-2.5 mb-2.5">
           <Filters selections={selections} onChange={setSelections} />
         </div>
 
         {/* Main two-column layout: results and map */}
-        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1.45fr)] gap-6">
-          {/* Results List */}
-          <div>
-            <div className="bg-white rounded-xl shadow border p-4">
-              {/* States */}
-              {!haveOrigin && <div className="opacity-70">Enter an address to get started.</div>}
-              {loading && <div className="opacity-70">Searching nearby…</div>}
-              {error && <div className="text-red-600 break-all">{error}</div>}
-              {!loading && haveOrigin && !hasAnyDuration && places.length > 0 && (
-                <div className="text-sm opacity-70">Showing distance only (enable Routes API on the server key to see minutes).</div>)}
-              {!loading && haveOrigin && places.length === 0 && !error && (
-                <div className="opacity-70">No places match your filters here. Try a larger radius or different categories.</div>)}
-
-              <ResultsList
-                items={filteredPlaces}
-                selectedId={selectedId}
-                onSelect={(id: string) => setSelectedId(id)}
-              />
-            </div>
-          </div>
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] gap-4">
           {/* Map */}
-          <div>
-            <div className="bg-white rounded-xl shadow border p-2 flex items-center justify-center min-h-[400px] lg:min-h-[500px]">
+          <div className="order-2 lg:order-1">
+            <div className="bg-white rounded-xl shadow border p-1.5 flex items-center justify-center min-h-[340px] lg:min-h-[420px]">
               <MapView
                 center={center}
                 radiusMeters={radiusMeters}
@@ -290,6 +270,27 @@ export default function HomePage() {
                 selectedId={selectedId}
                 onMarkerClick={(id: string) => setSelectedId(id)}
               />
+            </div>
+          </div>
+          {/* Results List */}
+          <div className="order-1 lg:order-2">
+            <div className="bg-white rounded-xl shadow border p-2.5">
+              {/* States */}
+              {!haveOrigin && <div className="opacity-70">Enter an address to get started.</div>}
+              {loading && <div className="opacity-70">Searching nearby…</div>}
+              {error && <div className="text-red-600 break-all">{error}</div>}
+              {!loading && haveOrigin && places.length === 0 && !error && (
+                <div className="opacity-70">No places match your filters here. Try a larger radius or different categories.</div>)}
+              {!loading && haveOrigin && filteredPlaces.length === 0 && places.length > 0 && openNowOnly && (
+                <div className="text-sm opacity-70">Everything here is closed right now. Turn off &ldquo;Open now only&rdquo; or try another category.</div>
+              )}
+              {filteredPlaces.length > 0 && (
+                <ResultsList
+                  items={filteredPlaces}
+                  selectedId={selectedId}
+                  onSelect={(id: string) => setSelectedId(id)}
+                />
+              )}
             </div>
           </div>
         </div>

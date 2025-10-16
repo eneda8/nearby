@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
+import https from 'node:https';
+import { URL } from 'node:url';
 
 const API_KEY = process.env.GOOGLE_MAPS_API_KEY_SERVER;
+export const runtime = 'nodejs';
 type TravelMode = 'WALK' | 'BICYCLE' | 'DRIVE';
 const DEFAULT_MODES: TravelMode[] = ['DRIVE', 'WALK'];
 
@@ -58,23 +61,15 @@ export async function POST(req: NextRequest) {
     const allElements: any[] = [];
 
     for (const mode of modesToFetch) {
-      const resp = await fetch('https://routes.googleapis.com/distanceMatrix/v2:computeRouteMatrix', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Goog-Api-Key': API_KEY,
-          'X-Goog-FieldMask':
-            'originIndex,destinationIndex,duration,distanceMeters,status,condition',
-        },
-        body: JSON.stringify({ ...baseBody, travelMode: mode }),
+      const { ok, status, text } = await postJson('https://routes.googleapis.com/distanceMatrix/v2:computeRouteMatrix', {
+        ...baseBody,
+        travelMode: mode,
       });
 
-      const text = await resp.text();
-
-      if (!resp.ok) {
+      if (!ok) {
         return NextResponse.json(
           { error: `Route Matrix error for ${mode.toLowerCase()}`, details: text },
-          { status: resp.status }
+          { status }
         );
       }
 
@@ -93,4 +88,39 @@ export async function POST(req: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+function postJson(url: string, body: unknown): Promise<{ ok: boolean; status: number; text: string }> {
+  const payload = JSON.stringify(body);
+  const endpoint = new URL(url);
+
+  return new Promise((resolve, reject) => {
+    const req = https.request(
+      {
+        hostname: endpoint.hostname,
+        path: endpoint.pathname + endpoint.search,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(payload),
+          'X-Goog-Api-Key': API_KEY ?? '',
+          'X-Goog-FieldMask':
+            'originIndex,destinationIndex,duration,distanceMeters,status,condition',
+        },
+      },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk) => chunks.push(chunk));
+        res.on('end', () => {
+          const text = Buffer.concat(chunks).toString('utf8');
+          const status = res.statusCode ?? 500;
+          resolve({ ok: status >= 200 && status < 300, status, text });
+        });
+      }
+    );
+
+    req.on('error', reject);
+    req.write(payload);
+    req.end();
+  });
 }
