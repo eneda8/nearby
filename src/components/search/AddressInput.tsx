@@ -7,12 +7,11 @@ interface AddressInputProps {
 }
 
 export default function AddressInput({ onPlace }: AddressInputProps) {
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const elementRef = useRef<any | null>(null); // keep a handle to the widget so we don't create two
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
+  const listenerRef = useRef<google.maps.MapsEventListener | null>(null);
 
   useEffect(() => {
-    if (elementRef.current) return; // already initialized (prevents Strict Mode dupes)
-
     let canceled = false;
     const loader = new Loader({
       apiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY!,
@@ -21,44 +20,48 @@ export default function AddressInput({ onPlace }: AddressInputProps) {
     });
 
     loader.load().then(async () => {
-      if (canceled || !containerRef.current) return;
-
-      // Clear container in case of hot reloads
-      containerRef.current.innerHTML = '';
+      if (canceled || !inputRef.current) return;
 
       const placesLib = (await google.maps.importLibrary('places')) as google.maps.PlacesLibrary;
-      // @ts-ignore - runtime-provided element class
-      const pac: any = new google.maps.places.PlaceAutocompleteElement({});
-      elementRef.current = pac;
 
-      pac.setAttribute('aria-label', 'Enter an address');
-      containerRef.current.appendChild(pac);
+      autocompleteRef.current = new placesLib.Autocomplete(inputRef.current, {
+        fields: ['place_id', 'formatted_address', 'geometry', 'name'],
+        types: ['geocode'],
+      });
 
-      pac.addEventListener('gmp-select', async (e: any) => {
-        const place = e.placePrediction.toPlace();
-        await place.fetchFields({ fields: ['formattedAddress', 'displayName', 'location', 'id'] });
-
-        const result = {
-          place_id: place.id,
-          formatted_address: place.formattedAddress,
-          name: place.displayName,
-          geometry: { location: place.location },
-        } as unknown as google.maps.places.PlaceResult;
-
-        onPlace(result);
+      listenerRef.current = autocompleteRef.current.addListener('place_changed', () => {
+        const place = autocompleteRef.current?.getPlace();
+        if (!place || !place.geometry?.location) return;
+        onPlace(place as google.maps.places.PlaceResult);
       });
     });
 
     return () => {
       canceled = true;
+      listenerRef.current?.remove();
+      listenerRef.current = null;
+      autocompleteRef.current = null;
     };
   }, [onPlace]);
 
   return (
-    <div className="space-y-1">
-      <label className="text-sm font-medium">Enter an address</label>
-      <div ref={containerRef} className="relative" />
-      <div className="text-xs opacity-60 select-none mt-1">Powered by Google</div>
+    <div className="flex flex-col gap-2">
+      <div className="relative">
+        <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-gray-400">
+          <svg width="18" height="18" fill="none" viewBox="0 0 24 24">
+            <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
+            <path stroke="currentColor" strokeWidth="2" d="M20 20l-3.65-3.65" />
+          </svg>
+        </span>
+        <input
+          ref={inputRef}
+          type="text"
+          placeholder="Enter an address"
+          autoComplete="off"
+          className="w-full h-11 rounded-lg border border-gray-300 pl-10 pr-3 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+      </div>
+      <div className="text-xs opacity-60 select-none">Powered by Google</div>
     </div>
   );
 }

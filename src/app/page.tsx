@@ -3,10 +3,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import MapView from '@/components/map/MapView';
 import AddressInput from '@/components/search/AddressInput';
-import Controls, { TravelMode } from '@/components/search/Controls';
+import Controls from '@/components/search/Controls';
 import ResultsList, { PlaceItem } from '@/components/search/ResultsList';
 import Filters, { type Selection } from '@/components/search/Filters';
-import { CATEGORIES, POPULAR_TYPES } from '@/lib/categories';
+import { CATEGORIES } from '@/lib/categories';
 
 const DEV_ORIGIN = process.env.NEXT_PUBLIC_DEV_ORIGIN
   ? process.env.NEXT_PUBLIC_DEV_ORIGIN.split(',').map(Number)
@@ -21,7 +21,6 @@ export default function HomePage() {
 
   // Controls
   const [radiusMeters, setRadiusMeters] = useState(1609.344); // 1 mile
-  const [mode, setMode] = useState<TravelMode>('DRIVE');
 
   // Filters (multi-select Option A)
   const [selections, setSelections] = useState<Selection[]>([]);
@@ -81,7 +80,7 @@ export default function HomePage() {
             lat: center.lat,
             lng: center.lng,
             radiusMeters,
-            includedTypes, // derived from Filters (or POPULAR_TYPES)
+            includedTypes, // derived from Filters
           }),
           signal: controller.signal,
         });
@@ -113,7 +112,6 @@ export default function HomePage() {
             body: JSON.stringify({
               origin: center,
               destinations,
-              travelMode: mode,
             }),
             signal: controller.signal,
           });
@@ -130,8 +128,10 @@ export default function HomePage() {
                     .map((ln) => JSON.parse(ln));
 
             elements?.forEach((el: any) => {
-              const idx = el.destinationIndex;
-              if (typeof idx !== 'number' || !top[idx]) return;
+              const idx = Number(el.destinationIndex);
+              if (!Number.isInteger(idx) || !top[idx]) return;
+
+              const mode = typeof el.travelMode === 'string' ? el.travelMode.toUpperCase() : undefined;
 
               // duration can be "523s" or { seconds: 523 }
               let durSec: number | undefined;
@@ -142,9 +142,29 @@ export default function HomePage() {
                 durSec = Number(el.duration.seconds);
               }
 
-              top[idx].durationSec = durSec;
-              if (typeof el.distanceMeters === 'number') {
-                top[idx].distanceMeters = el.distanceMeters;
+              const distanceMeters = typeof el.distanceMeters === 'number' ? el.distanceMeters : undefined;
+
+              if (mode === 'DRIVE') {
+                if (durSec != null) top[idx].driveDurationSec = durSec;
+                if (distanceMeters != null) {
+                  top[idx].driveDistanceMeters = distanceMeters;
+                  top[idx].distanceMeters = distanceMeters;
+                }
+              } else if (mode === 'WALK') {
+                if (durSec != null) top[idx].walkDurationSec = durSec;
+                if (distanceMeters != null) {
+                  top[idx].walkDistanceMeters = distanceMeters;
+                  if (top[idx].distanceMeters == null) {
+                    top[idx].distanceMeters = distanceMeters;
+                  }
+                }
+              } else {
+                if (durSec != null && top[idx].driveDurationSec == null) {
+                  top[idx].driveDurationSec = durSec;
+                }
+                if (distanceMeters != null && top[idx].distanceMeters == null) {
+                  top[idx].distanceMeters = distanceMeters;
+                }
               }
             });
 
@@ -157,14 +177,22 @@ export default function HomePage() {
           }
         }
 
-        // Default sort: travel time (asc), then straight-line distance
+        // Default sort: distance (asc), then travel time
         items.sort((a, b) => {
-          const ta = a.durationSec ?? Number.POSITIVE_INFINITY;
-          const tb = b.durationSec ?? Number.POSITIVE_INFINITY;
-          if (ta !== tb) return ta - tb;
-          const da = a.directDistanceMeters ?? Number.POSITIVE_INFINITY;
-          const db = b.directDistanceMeters ?? Number.POSITIVE_INFINITY;
-          return da - db;
+          const primaryDistance = (p: PlaceItem) =>
+            p.distanceMeters ??
+            p.driveDistanceMeters ??
+            p.walkDistanceMeters ??
+            p.directDistanceMeters ??
+            Number.POSITIVE_INFINITY;
+
+          const da = primaryDistance(a);
+          const db = primaryDistance(b);
+          if (da !== db) return da - db;
+
+          const primaryDuration = (p: PlaceItem) =>
+            p.driveDurationSec ?? p.walkDurationSec ?? Number.POSITIVE_INFINITY;
+          return primaryDuration(a) - primaryDuration(b);
         });
 
   setPlaces(items);
@@ -176,76 +204,96 @@ export default function HomePage() {
     })();
 
     return () => controller.abort();
-  }, [center, radiusMeters, mode, haveOrigin, includedTypes]);
+  }, [center, radiusMeters, haveOrigin, includedTypes]);
 
-  const hasAnyDuration = useMemo(() => places.some((p) => typeof p.durationSec === 'number'), [places]);
+  const hasAnyDuration = useMemo(
+    () => places.some((p) => typeof p.driveDurationSec === 'number' || typeof p.walkDurationSec === 'number'),
+    [places]
+  );
 
   return (
-    <main className="max-w-6xl mx-auto p-6 space-y-6">
-      <header className="space-y-2">
-        <h1 className="text-3xl font-semibold tracking-tight">Nearby</h1>
-        <p className="text-muted-foreground">Find places near any address — map + list, with real travel times.</p>
-      </header>
+    <main className="min-h-screen bg-[#f7f5f2] py-6 px-4 sm:px-6 lg:px-10 xl:px-14">
+      <div className="w-full max-w-7xl mx-auto">
+        <header className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Nearby</h1>
+          </div>
+        </header>
 
-  <section className="grid gap-4">
-        <AddressInput
-          onPlace={(place) => {
-            const loc = place.geometry!.location!;
-            setCenter({ lat: loc.lat(), lng: loc.lng() });
-            setHaveOrigin(true);
-            setSelectedId(null);
-          }}
-        />
-
-        {/* Clean filters (chips + More drawer + tokens) */}
-        <Filters selections={selections} onChange={setSelections} />
-
-        <Controls onRadiusChange={setRadiusMeters} onModeChange={setMode} />
-        <div className="flex items-center gap-2 mt-2">
-          <label className="flex items-center gap-2 cursor-pointer select-none">
-            <span className="text-sm">Open now only</span>
-            <button
-              type="button"
-              aria-pressed={openNowOnly}
-              onClick={() => setOpenNowOnly((v) => !v)}
-              className={`relative w-10 h-6 rounded-full transition-colors duration-200 ${openNowOnly ? 'bg-green-500' : 'bg-gray-300'}`}
-              style={{ minWidth: 40 }}
-            >
-              <span
-                className={`absolute left-0 top-0 w-6 h-6 bg-white rounded-full shadow transition-transform duration-200 ${openNowOnly ? 'translate-x-4' : ''}`}
-                style={{ transform: openNowOnly ? 'translateX(16px)' : 'none' }}
-              />
-            </button>
-          </label>
+        <div className="text-sm text-gray-600 mb-3">
+          Select a radius and category to see what's nearby this address.
         </div>
-      </section>
 
-      <section>
-        <MapView
-          center={center}
-          radiusMeters={radiusMeters}
-          markers={markers}
-          selectedId={selectedId}
-          onMarkerClick={(id: string) => setSelectedId(id)}
-        />
-      </section>
+        {/* Search bar */}
+        <div className="bg-white rounded-xl shadow border p-4 mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between lg:gap-8">
+          <div className="flex-1 min-w-0">
+            <AddressInput onPlace={(place) => {
+              const loc = place.geometry!.location!;
+              setCenter({ lat: loc.lat(), lng: loc.lng() });
+              setHaveOrigin(true);
+              setSelectedId(null);
+            }} />
+          </div>
+          <div className="flex flex-wrap gap-4 items-center lg:justify-end">
+            <Controls onRadiusChange={setRadiusMeters} />
+            <div className="flex items-center gap-2">
+              <span className="text-sm whitespace-nowrap">Open now only</span>
+              <button
+                type="button"
+                aria-pressed={openNowOnly}
+                onClick={() => setOpenNowOnly((v) => !v)}
+                className={`relative w-10 h-6 rounded-full transition-colors duration-200 ${openNowOnly ? 'bg-green-500' : 'bg-gray-300'}`}
+                style={{ minWidth: 40 }}
+              >
+                <span
+                  className={`absolute left-0 top-0 w-6 h-6 bg-white rounded-full shadow transition-transform duration-200 ${openNowOnly ? 'translate-x-4' : ''}`}
+                  style={{ transform: openNowOnly ? 'translateX(16px)' : 'none' }}
+                />
+              </button>
+            </div>
+          </div>
+        </div>
 
-      {/* States */}
-      {!haveOrigin && <div className="opacity-70">Enter an address to get started.</div>}
-      {loading && <div className="opacity-70">Searching nearby…</div>}
-      {error && <div className="text-red-600 break-all">{error}</div>}
-      {!loading && haveOrigin && !hasAnyDuration && places.length > 0 && (
-        <div className="text-sm opacity-70">Showing distance only (enable Routes API on the server key to see minutes).</div>
-      )}
-      {!loading && haveOrigin && places.length === 0 && !error && (
-        <div className="opacity-70">No places match your filters here. Try a larger radius or different categories.</div>
-      )}
+        {/* Interactive Filters */}
+        <div className="bg-white rounded-xl shadow border p-4 mb-4">
+          <Filters selections={selections} onChange={setSelections} />
+        </div>
 
-      <ResultsList
-        items={filteredPlaces}
-        selectedId={selectedId}
-        onSelect={(id: string) => setSelectedId(id)}
-      />
+        {/* Main two-column layout: results and map */}
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1.45fr)] gap-6">
+          {/* Results List */}
+          <div>
+            <div className="bg-white rounded-xl shadow border p-4">
+              {/* States */}
+              {!haveOrigin && <div className="opacity-70">Enter an address to get started.</div>}
+              {loading && <div className="opacity-70">Searching nearby…</div>}
+              {error && <div className="text-red-600 break-all">{error}</div>}
+              {!loading && haveOrigin && !hasAnyDuration && places.length > 0 && (
+                <div className="text-sm opacity-70">Showing distance only (enable Routes API on the server key to see minutes).</div>)}
+              {!loading && haveOrigin && places.length === 0 && !error && (
+                <div className="opacity-70">No places match your filters here. Try a larger radius or different categories.</div>)}
+
+              <ResultsList
+                items={filteredPlaces}
+                selectedId={selectedId}
+                onSelect={(id: string) => setSelectedId(id)}
+              />
+            </div>
+          </div>
+          {/* Map */}
+          <div>
+            <div className="bg-white rounded-xl shadow border p-2 flex items-center justify-center min-h-[400px] lg:min-h-[500px]">
+              <MapView
+                center={center}
+                radiusMeters={radiusMeters}
+                markers={markers}
+                selectedId={selectedId}
+                onMarkerClick={(id: string) => setSelectedId(id)}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
     </main>
   );
 }
