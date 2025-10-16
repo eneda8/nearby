@@ -32,10 +32,12 @@ export default function ResultsList({
   items,
   selectedId,
   onSelect,
+  onHover,
 }: {
   items: PlaceItem[];
   selectedId?: string | null;
   onSelect?: (id: string) => void;
+  onHover?: (id: string | null) => void;
 }) {
   useEffect(() => {
     if (!selectedId) return;
@@ -46,7 +48,7 @@ export default function ResultsList({
   if (!items?.length) return null;
 
   return (
-    <div className="mt-1 flex flex-col gap-1.5">
+    <div className="mt-1 flex flex-col gap-2">
       {items.map((p) => {
         const link =
           p.googleMapsUri ||
@@ -75,25 +77,35 @@ export default function ResultsList({
             tabIndex={0}
             onClick={handleActivate}
             onKeyDown={handleKeyDown}
-            className={`w-full text-left bg-[#f7f5f2] rounded-lg border p-1.5 transition hover:shadow focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer ${
-              active ? 'ring-2 ring-blue-500' : ''
+            onMouseEnter={() => onHover?.(p.id)}
+            onMouseLeave={() => onHover?.(null)}
+            className={`w-full text-left rounded-xl border transition focus:outline-none focus:ring-2 focus:ring-slate-900/40 cursor-pointer p-4 ${
+              active
+                ? 'border-slate-900/60 bg-white shadow-lg shadow-slate-900/10'
+                : 'border-slate-200 bg-white hover:border-slate-300 hover:shadow-md'
             }`}
           >
-            <div className="flex flex-col gap-0.5 mb-0.5 sm:flex-row sm:items-start sm:justify-between sm:gap-2.5">
-              <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-1.5 gap-y-1">
-                <FaMapMarkerAlt className="text-red-400 w-3.5 h-3.5" />
-                <a
-                  href={link}
-                  target="_blank"
-                  rel="noreferrer"
-                  onClick={(e) => e.stopPropagation()}
-                  className="font-semibold text-sm leading-tight break-words text-gray-900 hover:underline"
-                >
-                  {p.name}
-                </a>
-                <div className="flex items-center gap-1.5 text-[11px] font-semibold text-gray-700">
+            <div className="flex items-start gap-3">
+              <div
+                className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full ${
+                  active ? 'bg-slate-900 text-white' : 'bg-slate-900/5 text-slate-600'
+                }`}
+              >
+                <FaMapMarkerAlt className="w-3.5 h-3.5" />
+              </div>
+              <div className="flex-1 min-w-0 space-y-1">
+                <div className="flex flex-wrap items-baseline gap-2">
+                  <a
+                    href={link}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="font-semibold text-sm leading-tight text-slate-900 hover:underline"
+                  >
+                    {p.name}
+                  </a>
                   {typeof p.rating === 'number' && (
-                    <span className="flex items-center gap-1">
+                    <span className="flex items-center gap-1 text-[11px] font-medium text-slate-600">
                       <FaStar className="text-yellow-500 w-3 h-3" />
                       <span className="text-yellow-700">{p.rating.toFixed(1)}</span>
                     </span>
@@ -123,36 +135,33 @@ export default function ResultsList({
                         : 'Open'
                       : 'Closed';
                     return (
-                  <span
-                    className={`text-[11px] leading-tight px-1 py-0.5 rounded ${badgeClass}`}
-                    title={closingSoon ? 'Closing soon (within 1 hour)' : undefined}
-                    aria-label={
-                      closingSoon ? 'Open but closing within an hour' : badgeText
-                    }
-                  >
+                      <span
+                        className={`text-[11px] leading-tight px-1.5 py-0.5 rounded-full ${badgeClass}`}
+                        title={closingSoon ? 'Closing soon (within 1 hour)' : undefined}
+                        aria-label={closingSoon ? 'Open but closing within an hour' : badgeText}
+                      >
                         {badgeText}
                       </span>
                     );
                   })()}
                 </div>
+                {p.primaryType && (
+                  <div className="text-[11px] text-slate-500">{p.primaryType.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}</div>
+                )}
+                <div className="text-[11px] text-slate-600">{p.address}</div>
               </div>
-              <div className="flex items-center gap-1.5 text-gray-500 text-[11px] whitespace-nowrap">
+              <div className="flex flex-col items-end gap-1 text-slate-500 text-xs whitespace-nowrap pl-2">
                 {miles !== undefined && <span>{miles.toFixed(2)} mi</span>}
-                {/* Car and walk icons with minutes */}
-                {driveMinutes !== undefined && (
-                  <span className="flex items-center gap-1"><FaCar className="w-3 h-3" />{driveMinutes} min</span>
-                )}
-                {walkMinutes !== undefined && (
-                  <span className="flex items-center gap-1"><FaWalking className="w-3 h-3" />{walkMinutes} min</span>
-                )}
+                <div className="flex items-center gap-2">
+                  {driveMinutes !== undefined && (
+                    <span className="flex items-center gap-1"><FaCar className="w-3 h-3" />{driveMinutes} min</span>
+                  )}
+                  {walkMinutes !== undefined && (
+                    <span className="flex items-center gap-1"><FaWalking className="w-3 h-3" />{walkMinutes} min</span>
+                  )}
+                </div>
               </div>
             </div>
-            {/* Category subtitle under title */}
-            {p.primaryType && (
-              <div className="text-[11px] text-gray-500 mb-0.5">{p.primaryType.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}</div>
-            )}
-            {/* ...existing code... */}
-            <div className="text-[11px] text-gray-700 mb-0.5">{p.address}</div>
           </div>
         );
       })}

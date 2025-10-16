@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { CATEGORIES, type CatKey } from '@/lib/categories';
 import { FaShoppingCart, FaUtensils, FaStore, FaStar, FaCog, FaHospital, FaBus, FaHotel, FaUniversity, FaChurch } from 'react-icons/fa';
 
@@ -31,6 +31,22 @@ export default function Filters({
   onClearAll?: () => void;
 }) {
   const [openDropdown, setOpenDropdown] = useState<CatKey | null>(null);
+
+  useEffect(() => {
+    if (!openDropdown) return;
+
+    const handlePointer = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+      const menu = document.getElementById(`cat-dropdown-${openDropdown}`);
+      const trigger = document.getElementById(`cat-trigger-${openDropdown}`);
+      if (menu?.contains(target) || trigger?.contains(target)) return;
+      setOpenDropdown(null);
+    };
+
+    document.addEventListener('pointerdown', handlePointer);
+    return () => document.removeEventListener('pointerdown', handlePointer);
+  }, [openDropdown]);
 
   const mainCats = useMemo(
     () => CATEGORIES.filter((c) => MAIN_CATEGORIES.includes(c.key)),
@@ -78,9 +94,9 @@ export default function Filters({
   }, [selections]);
 
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-2">
       {/* Dropdown row */}
-      <div className="flex flex-wrap gap-1.5">
+      <div className="flex flex-wrap gap-2">
         {mainCats.map((cat) => {
           const Icon = ICONS[cat.key] || FaStar;
           const selectedForCat = selectionsByCat.get(cat.key as CatKey) ?? [];
@@ -89,9 +105,10 @@ export default function Filters({
             <div key={cat.key} className="relative">
               <button
                 type="button"
+                id={`cat-trigger-${cat.key}`}
                 onClick={() => setOpenDropdown((prev) => (prev === cat.key ? null : cat.key))}
-                className={`h-7 px-2.5 rounded-md border flex items-center gap-1 text-xs bg-background transition ${
-                  active ? 'ring-1 ring-foreground/40' : ''
+                className={`h-8 px-3 rounded-lg border flex items-center gap-1.5 text-xs bg-white transition shadow-sm ${
+                  active ? 'border-slate-400 shadow-md' : 'border-slate-200 hover:border-slate-300'
                 }`}
               >
                 <Icon className="w-3.5 h-3.5" />
@@ -109,12 +126,15 @@ export default function Filters({
                 </svg>
               </button>
               {active && (
-                <div className="absolute z-30 mt-1 w-56 rounded-md border bg-white shadow-lg p-2 space-y-1">
-                  <div className="flex items-center justify-between text-[11px] font-medium text-gray-600 pb-1 border-b">
+                <div
+                  id={`cat-dropdown-${cat.key}`}
+                  className="absolute z-30 mt-2 w-60 rounded-xl border border-slate-200 bg-white shadow-xl p-3 space-y-2"
+                >
+                  <div className="flex items-center justify-between text-[11px] font-medium text-slate-600 pb-2 border-b border-slate-100">
                     <span>Select {cat.label}</span>
                     <button
                       type="button"
-                      className="text-blue-600 hover:underline"
+                      className="text-slate-500 hover:text-slate-900"
                       onClick={() => {
                         const filtered = selections.filter((s) => s.parent !== cat.key);
                         onChange(filtered);
@@ -123,32 +143,25 @@ export default function Filters({
                       Clear
                     </button>
                   </div>
-                  <div className="max-h-52 overflow-y-auto space-y-1">
+                  <div className="max-h-48 overflow-y-auto space-y-1">
                     {cat.subs.map((sub) => {
                       const checked = selectedForCat.includes(sub.key);
                       return (
                         <label
                           key={sub.key}
-                          className="flex items-center gap-2 text-[11px] cursor-pointer px-1 py-1 rounded hover:bg-gray-100"
+                          className="flex items-center gap-2 text-[11px] cursor-pointer px-1.5 py-1 rounded-lg hover:bg-slate-100"
                         >
                           <input
                             type="checkbox"
                             checked={checked}
                             onChange={() => toggleOption(cat.key as CatKey, sub.key)}
-                            className="h-3.5 w-3.5 accent-foreground"
+                            className="h-3.5 w-3.5 accent-slate-900"
                           />
                           <span className="truncate">{sub.label}</span>
                         </label>
                       );
                     })}
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setOpenDropdown(null)}
-                    className="mt-2 w-full h-7 rounded-md border text-[11px] bg-background hover:bg-gray-100"
-                  >
-                    Done
-                  </button>
                 </div>
               )}
             </div>
@@ -158,16 +171,16 @@ export default function Filters({
 
       {/* Selected tokens */}
       {selectedTokens.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1 mt-1">
+        <div className="flex flex-wrap items-center gap-1.5 mt-1">
           {selectedTokens.map((t) => (
             <span
               key={`${t.parent}:${t.subKey}`}
-              className="inline-flex items-center gap-1 h-6 px-1.5 rounded-full border bg-background text-[11px]"
+              className="inline-flex items-center gap-2 h-7 px-3 rounded-full border border-slate-200 bg-slate-100 text-[11px] text-slate-700"
             >
               {t.label}
               <button
                 type="button"
-                className="opacity-70 hover:opacity-100"
+                className="opacity-60 hover:opacity-100"
                 onClick={() => removeSelection(t)}
                 aria-label={`Remove ${t.label}`}
               >
@@ -178,7 +191,7 @@ export default function Filters({
           <button
             type="button"
             onClick={clearAll}
-            className="ml-2 h-6 px-1.5 rounded-full border bg-background text-[11px]"
+            className="ml-2 h-7 px-3 rounded-full border border-slate-200 bg-white text-[11px] hover:border-slate-300"
           >
             Clear all
           </button>

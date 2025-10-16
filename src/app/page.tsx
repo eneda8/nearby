@@ -8,6 +8,8 @@ import ResultsList, { PlaceItem } from '@/components/search/ResultsList';
 import Filters, { type Selection } from '@/components/search/Filters';
 import Toggle from '@/components/ui/Toggle';
 import { CATEGORIES } from '@/lib/categories';
+import { FiLink } from 'react-icons/fi';
+import { useSearchParams } from 'next/navigation';
 
 const DEV_ORIGIN = process.env.NEXT_PUBLIC_DEV_ORIGIN
   ? process.env.NEXT_PUBLIC_DEV_ORIGIN.split(',').map(Number)
@@ -20,6 +22,27 @@ export default function HomePage() {
   );
   const [haveOrigin, setHaveOrigin] = useState<boolean>(!!DEV_ORIGIN);
   const [showLanding, setShowLanding] = useState<boolean>(!DEV_ORIGIN);
+  const [selectedAddress, setSelectedAddress] = useState<string>('');
+  const [hoverId, setHoverId] = useState<string | null>(null);
+  const [copySuccess, setCopySuccess] = useState<'idle' | 'copied' | 'error'>('idle');
+  const searchParams = useSearchParams();
+
+  useEffect(() => {
+    const latParam = searchParams.get('lat');
+    const lngParam = searchParams.get('lng');
+    const addressParam = searchParams.get('address');
+
+    if (latParam && lngParam) {
+      const lat = parseFloat(latParam);
+      const lng = parseFloat(lngParam);
+      if (Number.isFinite(lat) && Number.isFinite(lng)) {
+        setCenter({ lat, lng });
+        setHaveOrigin(true);
+        setShowLanding(false);
+        if (addressParam) setSelectedAddress(addressParam);
+      }
+    }
+  }, [searchParams]);
 
   // Controls
   const [radiusMeters, setRadiusMeters] = useState(1609.344); // 1 mile
@@ -36,6 +59,21 @@ export default function HomePage() {
     return Array.from(new Set(all));
   }, [selections]);
 
+  const typeGroups = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    selections.forEach((sel) => {
+      const cat = CATEGORIES.find((c) => c.key === sel.parent);
+      const sub = cat?.subs.find((s) => s.key === sel.subKey) ?? cat?.subs[0];
+      if (!sub?.types) return;
+      const set = map.get(sel.parent) ?? new Set<string>();
+      sub.types.forEach((t) => set.add(t));
+      map.set(sel.parent, set);
+    });
+    return Array.from(map.values())
+      .map((set) => Array.from(set))
+      .filter((arr) => arr.length > 0);
+  }, [selections]);
+
   // Data + selection & hover
   const [places, setPlaces] = useState<PlaceItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -48,6 +86,33 @@ export default function HomePage() {
     () => (openNowOnly ? places.filter((p) => p.openNow) : places),
     [places, openNowOnly]
   );
+
+  useEffect(() => {
+    if (hoverId && !filteredPlaces.some((p) => p.id === hoverId)) {
+      setHoverId(null);
+    }
+  }, [hoverId, filteredPlaces]);
+
+  const handleCopyLink = async () => {
+    if (!haveOrigin) return;
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set('lat', center.lat.toString());
+      url.searchParams.set('lng', center.lng.toString());
+      if (selectedAddress) {
+        url.searchParams.set('address', selectedAddress);
+      } else {
+        url.searchParams.delete('address');
+      }
+      await navigator.clipboard.writeText(url.toString());
+      setCopySuccess('copied');
+      setTimeout(() => setCopySuccess('idle'), 2000);
+    } catch (err) {
+      console.error('Failed to copy link', err);
+      setCopySuccess('error');
+      setTimeout(() => setCopySuccess('idle'), 2000);
+    }
+  };
 
   // Open now toggle
   // UI state
@@ -70,7 +135,7 @@ export default function HomePage() {
     if (!haveOrigin) return;
     const controller = new AbortController();
 
-    if (!includedTypes?.length) {
+    if (typeGroups.length === 0) {
       setPlaces([]);
       setSelectedId(null);
       return;
@@ -83,24 +148,35 @@ export default function HomePage() {
         setSelectedId(null);
 
         // 1) Nearby search (Places API New)
-        const res = await fetch('/api/places', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            lat: center.lat,
-            lng: center.lng,
-            radiusMeters,
-            includedTypes, // derived from Filters
-          }),
-          signal: controller.signal,
-        });
+        const aggregated = new Map<string, PlaceItem>();
+        for (const group of typeGroups) {
+          const res = await fetch('/api/places', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              lat: center.lat,
+              lng: center.lng,
+              radiusMeters,
+              includedTypes: group,
+            }),
+            signal: controller.signal,
+          });
 
-        if (!res.ok) {
-          const text = await res.text();
-          throw new Error(`Places request failed: ${text}`);
+          if (!res.ok) {
+            const text = await res.text();
+            throw new Error(`Places request failed: ${text}`);
+          }
+
+          const data = await res.json();
+          const batch: PlaceItem[] = data?.places ?? [];
+          batch.forEach((place) => {
+            if (!aggregated.has(place.id)) {
+              aggregated.set(place.id, place);
+            }
+          });
         }
 
-        let items: PlaceItem[] = (await res.json()).places || [];
+        let items: PlaceItem[] = Array.from(aggregated.values());
 
         // 2) Route Matrix for top N (travel time + distance)
         const candidateMap = new Map<string, PlaceItem>();
@@ -215,7 +291,7 @@ export default function HomePage() {
           return primaryDuration(a) - primaryDuration(b);
         });
 
-  setPlaces(items);
+        setPlaces(items);
       } catch (e: any) {
         if (e.name !== 'AbortError') setError(e.message || 'Request failed');
       } finally {
@@ -224,7 +300,7 @@ export default function HomePage() {
     })();
 
     return () => controller.abort();
-  }, [center, radiusMeters, haveOrigin, includedTypes]);
+  }, [center, radiusMeters, haveOrigin, typeGroups]);
 
   if (showLanding) {
     return (
@@ -260,6 +336,7 @@ export default function HomePage() {
                 setCenter({ lat: loc.lat(), lng: loc.lng() });
                 setHaveOrigin(true);
                 setShowLanding(false);
+                setSelectedAddress(place.formatted_address ?? place.name ?? '');
                 setSelectedId(null);
               }}
               showBranding={false}
@@ -271,86 +348,111 @@ export default function HomePage() {
     );
   }
 
+  const miles = radiusMeters / 1609.344;
+  const radiusLabel = `${Math.abs(miles - Math.round(miles)) < 1e-3 ? Math.round(miles) : miles.toFixed(1)} mi radius`;
+
   return (
-    <main className="min-h-screen bg-[#f7f5f2] py-5 px-3 sm:px-6 lg:px-9 xl:px-12 text-[13px]">
-      <div className="w-full max-w-6xl mx-auto">
-        <header className="flex items-center justify-between mb-4">
-          <div>
-            <h1 className="text-xl font-bold tracking-tight">Nearby</h1>
-          </div>
-        </header>
+    <main className="relative h-screen overflow-hidden text-slate-900">
+      <div className="absolute inset-0">
+        <MapView
+          center={center}
+          radiusMeters={radiusMeters}
+          markers={markers}
+          selectedId={selectedId}
+          onMarkerClick={(id: string) => setSelectedId(id)}
+          className="w-full h-full"
+          showOrigin
+          showRadius
+          panOffsetPixels={{ x: 300, y: 0 }}
+          hoverId={hoverId}
+        />
+        <div className="absolute inset-0 bg-gradient-to-r from-[#0b0f19]/25 via-transparent to-transparent pointer-events-none" />
+      </div>
+      <div className="relative z-10 flex h-full w-full justify-end pointer-events-none">
+        <section className="pointer-events-auto w-full max-w-xl bg-white/95 backdrop-blur-md shadow-[0_35px_120px_-40px_rgba(15,23,42,0.75)] flex flex-col border-l border-white/40">
+          <header className="px-6 pt-6 pb-4 border-b border-black/5">
+            <p className="text-[10px] uppercase tracking-[0.3em] text-gray-400">Current address</p>
+            <div className="mt-1 flex items-start justify-between gap-3">
+              <h2 className="text-lg font-semibold text-slate-900 leading-tight truncate">
+                {selectedAddress || 'Choose an address to begin'}
+              </h2>
+              {haveOrigin && (
+                <button
+                  type="button"
+                  onClick={handleCopyLink}
+                  className="flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-900 transition"
+                  title={copySuccess === 'copied' ? 'Copied!' : copySuccess === 'error' ? 'Unable to copy' : 'Copy shareable link'}
+                >
+                  <FiLink className="w-4 h-4" />
+                  <span>
+                    {copySuccess === 'copied'
+                      ? 'Copied'
+                      : copySuccess === 'error'
+                      ? 'Try again'
+                      : 'Copy link'}
+                  </span>
+                </button>
+              )}
+            </div>
+            <p className="mt-1.5 text-[11px] text-gray-500">
+              {filteredPlaces.length > 0
+                ? `${filteredPlaces.length} ${filteredPlaces.length === 1 ? 'place' : 'places'} • ${radiusLabel}`
+                : radiusLabel}
+            </p>
+          </header>
 
-        <div className="text-[11px] text-gray-600 mb-2">
-          Select a radius and category to see what's nearby this address.
-        </div>
-
-        {/* Search bar */}
-        <div className="bg-white rounded-xl shadow border p-2.5 mb-2.5 flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between lg:gap-3.5">
-          <div className="flex-1 min-w-0">
-            <AddressInput onPlace={(place) => {
-              const loc = place.geometry!.location!;
-              setCenter({ lat: loc.lat(), lng: loc.lng() });
-              setHaveOrigin(true);
-              setSelectedId(null);
-            }} />
-          </div>
-          <div className="flex flex-wrap gap-2.5 items-center lg:justify-end">
-            <Controls onRadiusChange={setRadiusMeters} />
-            <div className="flex items-center gap-1.5">
-              <span className="text-[11px] font-medium whitespace-nowrap">Open now only</span>
-              <Toggle checked={openNowOnly} onChange={setOpenNowOnly} />
+          <div className="px-6 pt-5 pb-4 border-b border-black/5 space-y-3">
+            <AddressInput
+              placeholder="Search nearby"
+              onPlace={(place) => {
+                const loc = place.geometry!.location!;
+                setCenter({ lat: loc.lat(), lng: loc.lng() });
+                setHaveOrigin(true);
+                setShowLanding(false);
+                setSelectedAddress(place.formatted_address ?? place.name ?? '');
+                setSelectedId(null);
+              }}
+            />
+            <div className="flex flex-wrap items-center justify-between gap-3 text-[11px] text-gray-600">
+              <Controls onRadiusChange={setRadiusMeters} />
+              <div className="flex items-center gap-2">
+                <span className="font-medium">Open now</span>
+                <Toggle checked={openNowOnly} onChange={setOpenNowOnly} />
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* Interactive Filters */}
-        <div className="bg-white rounded-xl shadow border p-2.5 mb-2.5">
-          <Filters
-            selections={selections}
-            onChange={setSelections}
-            onClearAll={() => {
-              setPlaces([]);
-              setSelectedId(null);
-            }}
-          />
-        </div>
+          <div className="px-6 py-3 border-b border-black/5">
+            <Filters
+              selections={selections}
+              onChange={setSelections}
+              onClearAll={() => {
+                setPlaces([]);
+                setSelectedId(null);
+              }}
+            />
+          </div>
 
-        {/* Main two-column layout: results and map */}
-        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] gap-4">
-          {/* Map */}
-          <div className="order-2 lg:order-1">
-            <div className="bg-white rounded-xl shadow border p-1.5 flex items-center justify-center min-h-[340px] lg:min-h-[420px]">
-              <MapView
-                center={center}
-                radiusMeters={radiusMeters}
-                markers={markers}
+          <div className="flex-1 overflow-y-auto px-6 py-5 space-y-3">
+            {loading && <div className="opacity-70">Searching nearby…</div>}
+            {error && <div className="text-red-600 break-all">{error}</div>}
+            {!loading && filteredPlaces.length === 0 && !error && (
+              <div className="text-sm opacity-70">
+                {places.length === 0
+                  ? 'No places match your filters here. Try a larger radius or different categories.'
+                  : 'Everything here is closed right now. Turn off “Open now” or adjust filters.'}
+              </div>
+            )}
+            {filteredPlaces.length > 0 && (
+              <ResultsList
+                items={filteredPlaces}
                 selectedId={selectedId}
-                onMarkerClick={(id: string) => setSelectedId(id)}
+                onSelect={(id: string) => setSelectedId(id)}
+                onHover={setHoverId}
               />
-            </div>
+            )}
           </div>
-          {/* Results List */}
-          <div className="order-1 lg:order-2">
-            <div className="bg-white rounded-xl shadow border p-2.5">
-              {/* States */}
-              {!haveOrigin && <div className="opacity-70">Enter an address to get started.</div>}
-              {loading && <div className="opacity-70">Searching nearby…</div>}
-              {error && <div className="text-red-600 break-all">{error}</div>}
-              {!loading && haveOrigin && places.length === 0 && !error && (
-                <div className="opacity-70">No places match your filters here. Try a larger radius or different categories.</div>)}
-              {!loading && haveOrigin && filteredPlaces.length === 0 && places.length > 0 && openNowOnly && (
-                <div className="text-sm opacity-70">Everything here is closed right now. Turn off &ldquo;Open now only&rdquo; or try another category.</div>
-              )}
-              {filteredPlaces.length > 0 && (
-                <ResultsList
-                  items={filteredPlaces}
-                  selectedId={selectedId}
-                  onSelect={(id: string) => setSelectedId(id)}
-                />
-              )}
-            </div>
-          </div>
-        </div>
+        </section>
       </div>
     </main>
   );

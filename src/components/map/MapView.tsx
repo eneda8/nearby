@@ -1,4 +1,5 @@
 'use client';
+
 import { useEffect, useRef, useState } from 'react';
 import { Loader } from '@googlemaps/js-api-loader';
 
@@ -18,35 +19,45 @@ interface MapViewProps {
   className?: string;
   showOrigin?: boolean;
   showRadius?: boolean;
+  panOffsetPixels?: { x: number; y: number };
+  hoverId?: string | null;
 }
 
-/** Compute a zoom level so that a circle of `radiusMeters`
- * fits inside the smaller map dimension with some margin.
- */
+const MAP_STYLE: google.maps.MapTypeStyle[] = [
+  { elementType: 'geometry', stylers: [{ color: '#f4f4f4' }] },
+  { elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
+  { elementType: 'labels.text.fill', stylers: [{ color: '#4b5563' }] },
+  { elementType: 'labels.text.stroke', stylers: [{ color: '#ffffff' }] },
+  { featureType: 'administrative', elementType: 'geometry', stylers: [{ visibility: 'off' }] },
+  { featureType: 'poi', stylers: [{ visibility: 'off' }] },
+  { featureType: 'poi.park', elementType: 'geometry', stylers: [{ color: '#d9f2d9' }] },
+  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#ffffff' }] },
+  { featureType: 'road', elementType: 'geometry.stroke', stylers: [{ color: '#d3d8e0' }] },
+  { featureType: 'road.highway', elementType: 'geometry.fill', stylers: [{ color: '#f1f3f6' }] },
+  { featureType: 'transit', stylers: [{ visibility: 'off' }] },
+  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#cde6ff' }] },
+];
+
 function setZoomForRadius(
   map: google.maps.Map,
   center: google.maps.LatLngLiteral,
   radiusMeters: number,
-  marginRatio = 0.9 // 90% of the smaller dimension (tweak if you want tighter/looser)
+  marginRatio = 0.9
 ) {
   if (!radiusMeters || radiusMeters <= 0) {
     map.setCenter(center);
     return;
   }
+
   const div = map.getDiv() as HTMLElement;
   const w = div.clientWidth || 800;
   const h = div.clientHeight || 600;
-  const sizePx = Math.min(w, h) * marginRatio; // pixels available for the DIAMETER
+  const sizePx = Math.min(w, h) * marginRatio;
 
-  // meters per pixel we want
   const mpp = (2 * radiusMeters) / sizePx;
-
-  // meters/pixel at zoom 0 at this latitude
   const latRad = (center.lat * Math.PI) / 180;
   const mppAtZoom0 = 156543.03392 * Math.cos(latRad);
-
   let z = Math.log2(mppAtZoom0 / mpp);
-  // clamp to sane Google zooms
   z = Math.max(2, Math.min(21, z));
 
   map.setCenter(center);
@@ -62,6 +73,8 @@ export default function MapView({
   className,
   showOrigin = true,
   showRadius = true,
+  panOffsetPixels,
+  hoverId,
 }: MapViewProps) {
   const mapDivRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
@@ -70,7 +83,6 @@ export default function MapView({
   const markerRefs = useRef<Map<string, google.maps.Marker>>(new Map());
   const [apiReady, setApiReady] = useState(false);
 
-  // Single loader; must match AddressInput options
   useEffect(() => {
     const loader = new Loader({
       apiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY!,
@@ -87,13 +99,25 @@ export default function MapView({
         center,
         zoom: 14,
         streetViewControl: false,
-        fullscreenControl: false,
+        fullscreenControl: true,
         mapTypeControl: false,
         zoomControl: true,
+        scaleControl: true,
+        styles: MAP_STYLE,
       });
+
+      map.setOptions({
+        zoomControlOptions: { position: google.maps.ControlPosition.LEFT_BOTTOM },
+        fullscreenControlOptions: { position: google.maps.ControlPosition.RIGHT_BOTTOM },
+        scaleControlOptions: { position: google.maps.ControlPosition.LEFT_BOTTOM },
+      });
+
       mapRef.current = map;
 
-      // origin pin (blue dot)
+      if (panOffsetPixels) {
+        map.panBy(panOffsetPixels.x, panOffsetPixels.y);
+      }
+
       if (showOrigin) {
         originRef.current = new google.maps.Marker({
           position: center,
@@ -126,9 +150,7 @@ export default function MapView({
         });
       }
 
-      // initial zoom to radius
       setZoomForRadius(map, center, radiusMeters);
-
       setApiReady(true);
     });
 
@@ -137,7 +159,6 @@ export default function MapView({
     };
   }, []);
 
-  // Keep origin, circle, and zoom synced
   useEffect(() => {
     if (!apiReady || !mapRef.current) return;
 
@@ -190,9 +211,11 @@ export default function MapView({
     }
 
     setZoomForRadius(mapRef.current, center, radiusMeters);
-  }, [apiReady, center, radiusMeters, showOrigin, showRadius]);
+    if (panOffsetPixels) {
+      mapRef.current.panBy(panOffsetPixels.x, panOffsetPixels.y);
+    }
+  }, [apiReady, center, radiusMeters, showOrigin, showRadius, panOffsetPixels]);
 
-  // Recompute zoom on window resize so the circle stays snug
   useEffect(() => {
     if (!apiReady || !mapRef.current) return;
     const handler = () => setZoomForRadius(mapRef.current!, center, radiusMeters);
@@ -200,11 +223,26 @@ export default function MapView({
     return () => window.removeEventListener('resize', handler);
   }, [apiReady, center, radiusMeters]);
 
-  // Render/update/remove POI markers
   useEffect(() => {
     if (!apiReady || !mapRef.current) return;
 
-    // remove stale markers
+    const g = window.google;
+    if (!g?.maps) return;
+
+    const makeIcon = (color: string, scale = 1) => {
+      const size = 24 * scale;
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="${color}"><path d="M12 2C8.134 2 5 5.134 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.866-3.134-7-7-7zm0 9.5c-1.379 0-2.5-1.121-2.5-2.5S10.621 6.5 12 6.5s2.5 1.121 2.5 2.5S13.379 11.5 12 11.5z"/></svg>`;
+      return {
+        url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
+        scaledSize: new g.maps.Size(size, size),
+        anchor: new g.maps.Point(size / 2, size),
+      };
+    };
+
+    const baseIcon = makeIcon('#f43f5e', 1);
+    const hoverIcon = makeIcon('#2563eb', 1.1);
+    const selectedIcon = makeIcon('#ef4444', 1.2);
+
     for (const [id, mk] of markerRefs.current.entries()) {
       if (!markers.find((m) => m.id === id)) {
         mk.setMap(null);
@@ -212,23 +250,37 @@ export default function MapView({
       }
     }
 
-    // add/update markers
-    markers.forEach((m) => {
-      let mk = markerRefs.current.get(m.id);
+    markers.forEach((marker) => {
+      let mk = markerRefs.current.get(marker.id);
       if (!mk) {
-        mk = new google.maps.Marker({
-          position: m.position,
+        mk = new g.maps.Marker({
+          position: marker.position,
           map: mapRef.current!,
-          title: m.label,
+          title: marker.label,
+          icon: baseIcon,
+          zIndex: 10,
         });
-        if (onMarkerClick) mk.addListener('click', () => onMarkerClick(m.id));
-        markerRefs.current.set(m.id, mk);
+        if (onMarkerClick) mk.addListener('click', () => onMarkerClick(marker.id));
+        markerRefs.current.set(marker.id, mk);
       } else {
-        mk.setPosition(m.position);
-        mk.setTitle(m.label ?? '');
+        mk.setPosition(marker.position);
+        mk.setTitle(marker.label ?? '');
       }
+
+      let icon = baseIcon;
+      let zIndex = 10;
+      if (selectedId === marker.id) {
+        icon = selectedIcon;
+        zIndex = 30;
+      } else if (hoverId === marker.id) {
+        icon = hoverIcon;
+        zIndex = 20;
+      }
+
+      mk.setIcon(icon);
+      mk.setZIndex(zIndex);
     });
-  }, [apiReady, markers, onMarkerClick]);
+  }, [apiReady, markers, onMarkerClick, hoverId, selectedId]);
 
   const containerClass = className ?? 'w-full h-[60vh] rounded-2xl border';
   return <div ref={mapDivRef} className={containerClass} />;

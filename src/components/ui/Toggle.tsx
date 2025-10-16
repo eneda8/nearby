@@ -25,13 +25,13 @@ export default function Toggle({ checked, onChange, className }: ToggleProps) {
       aria-checked={checked}
       onClick={handleToggle}
       onKeyDown={handleKeyDown}
-      className={`relative inline-flex h-4.5 w-9 items-center rounded-full transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-blue-400 ${
+      className={`relative inline-flex h-[18px] w-[36px] items-center rounded-full transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-blue-400 ${
         checked ? 'bg-green-500' : 'bg-gray-300'
       } ${className ?? ''}`}
     >
       <span
-        className={`inline-block h-[14px] w-[14px] translate-x-0.5 rounded-full bg-white shadow transition-transform duration-200 ${
-          checked ? 'translate-x-[18px]' : 'translate-x-0.5'
+        className={`inline-block h-[14px] w-[14px] translate-x-[2px] rounded-full bg-white shadow transition-transform duration-200 ${
+          checked ? 'translate-x-[18px]' : 'translate-x-[2px]'
         }`}
       />
     </button>
