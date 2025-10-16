@@ -69,7 +69,11 @@ export default function HomePage() {
     if (!haveOrigin) return;
     const controller = new AbortController();
 
-    if(!includedTypes?.length) return;
+    if (!includedTypes?.length) {
+      setPlaces([]);
+      setSelectedId(null);
+      return;
+    }
     
     (async () => {
       try {
@@ -255,7 +259,14 @@ export default function HomePage() {
 
         {/* Interactive Filters */}
         <div className="bg-white rounded-xl shadow border p-2.5 mb-2.5">
-          <Filters selections={selections} onChange={setSelections} />
+          <Filters
+            selections={selections}
+            onChange={setSelections}
+            onClearAll={() => {
+              setPlaces([]);
+              setSelectedId(null);
+            }}
+          />
         </div>
 
         {/* Main two-column layout: results and map */}
