@@ -19,6 +19,7 @@ export default function HomePage() {
   DEV_ORIGIN ? { lat: DEV_ORIGIN[0], lng: DEV_ORIGIN[1] } : { lat: 40.7128, lng: -74.006 }
   );
   const [haveOrigin, setHaveOrigin] = useState<boolean>(!!DEV_ORIGIN);
+  const [showLanding, setShowLanding] = useState<boolean>(!DEV_ORIGIN);
 
   // Controls
   const [radiusMeters, setRadiusMeters] = useState(1609.344); // 1 mile
@@ -224,6 +225,51 @@ export default function HomePage() {
 
     return () => controller.abort();
   }, [center, radiusMeters, haveOrigin, includedTypes]);
+
+  if (showLanding) {
+    return (
+      <main className="relative min-h-screen bg-[#0b0f19] text-white">
+        <div className="absolute inset-0 overflow-hidden">
+          <div className="absolute inset-0 pointer-events-none">
+            <MapView
+              center={center}
+              radiusMeters={0}
+              markers={[]}
+              className="w-full h-full"
+              showOrigin={false}
+              showRadius={false}
+            />
+          </div>
+          <div className="absolute inset-0 bg-black/55 backdrop-blur-sm" />
+        </div>
+        <div className="relative z-10 flex flex-col items-center justify-center min-h-screen px-4 text-center gap-4">
+          <div>
+            <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-[10px] uppercase tracking-[0.3em] text-white/70">
+              Discover nearby
+            </span>
+            <h1 className="mt-4 text-4xl sm:text-5xl font-semibold tracking-tight">Nearby</h1>
+            <p className="mt-2 max-w-md text-base text-white/80">
+              Find great places around any address—restaurants, essentials, and more, all in one view.
+            </p>
+          </div>
+          <div className="w-full max-w-md bg-white/95 text-left rounded-xl shadow-xl p-4">
+            <AddressInput
+              placeholder="Search nearby"
+              onPlace={(place) => {
+                const loc = place.geometry!.location!;
+                setCenter({ lat: loc.lat(), lng: loc.lng() });
+                setHaveOrigin(true);
+                setShowLanding(false);
+                setSelectedId(null);
+              }}
+              showBranding={false}
+            />
+            <div className="mt-2 text-[10px] text-gray-500 text-center">Powered by Google</div>
+          </div>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-[#f7f5f2] py-5 px-3 sm:px-6 lg:px-9 xl:px-12 text-[13px]">

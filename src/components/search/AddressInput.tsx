@@ -4,9 +4,11 @@ import { Loader } from '@googlemaps/js-api-loader';
 
 interface AddressInputProps {
   onPlace: (place: google.maps.places.PlaceResult) => void;
+  placeholder?: string;
+  showBranding?: boolean;
 }
 
-export default function AddressInput({ onPlace }: AddressInputProps) {
+export default function AddressInput({ onPlace, placeholder = 'Enter an address', showBranding = true }: AddressInputProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
   const listenerRef = useRef<google.maps.MapsEventListener | null>(null);
@@ -56,12 +58,14 @@ export default function AddressInput({ onPlace }: AddressInputProps) {
         <input
           ref={inputRef}
           type="text"
-          placeholder="Enter an address"
+          placeholder={placeholder}
           autoComplete="off"
-          className="w-full h-8 rounded-lg border border-gray-300 pl-7 pr-2.5 text-[11px] focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full h-8 rounded-lg border border-gray-300 pl-7 pr-2.5 text-[11px] focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 placeholder:text-gray-400"
         />
       </div>
-      <div className="text-[10px] opacity-60 select-none">Powered by Google</div>
+      {showBranding && (
+        <div className="text-[10px] opacity-60 select-none">Powered by Google</div>
+      )}
     </div>
   );
 }

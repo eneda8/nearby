@@ -15,6 +15,9 @@ interface MapViewProps {
   markers?: Marker[];
   selectedId?: string | null;
   onMarkerClick?: (id: string) => void;
+  className?: string;
+  showOrigin?: boolean;
+  showRadius?: boolean;
 }
 
 /** Compute a zoom level so that a circle of `radiusMeters`
@@ -56,6 +59,9 @@ export default function MapView({
   markers = [],
   selectedId,
   onMarkerClick,
+  className,
+  showOrigin = true,
+  showRadius = true,
 }: MapViewProps) {
   const mapDivRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
@@ -88,34 +94,37 @@ export default function MapView({
       mapRef.current = map;
 
       // origin pin (blue dot)
-      originRef.current = new google.maps.Marker({
-        position: center,
-        map,
-        title: 'Origin',
-        clickable: false,
-        zIndex: 9999,
-        icon: {
-          path: google.maps.SymbolPath.CIRCLE,
-          scale: 8,
-          fillColor: '#1a73e8',
-          fillOpacity: 1,
-          strokeColor: '#ffffff',
-          strokeWeight: 2,
-        }
-      });
+      if (showOrigin) {
+        originRef.current = new google.maps.Marker({
+          position: center,
+          map,
+          title: 'Origin',
+          clickable: false,
+          zIndex: 9999,
+          icon: {
+            path: google.maps.SymbolPath.CIRCLE,
+            scale: 8,
+            fillColor: '#1a73e8',
+            fillOpacity: 1,
+            strokeColor: '#ffffff',
+            strokeWeight: 2,
+          },
+        });
+      }
 
-      // radius circle
-      circleRef.current = new google.maps.Circle({
-        map,
-        strokeColor: '#2563eb',
-        strokeOpacity: 0.7,
-        strokeWeight: 2,
-        fillColor: '#3b82f6',
-        fillOpacity: 0.12,
-        center,
-        radius: radiusMeters,
-        clickable: false,
-      });
+      if (showRadius && radiusMeters > 0) {
+        circleRef.current = new google.maps.Circle({
+          map,
+          strokeColor: '#2563eb',
+          strokeOpacity: 0.7,
+          strokeWeight: 2,
+          fillColor: '#3b82f6',
+          fillOpacity: 0.12,
+          center,
+          radius: radiusMeters,
+          clickable: false,
+        });
+      }
 
       // initial zoom to radius
       setZoomForRadius(map, center, radiusMeters);
@@ -132,27 +141,56 @@ export default function MapView({
   useEffect(() => {
     if (!apiReady || !mapRef.current) return;
 
-    originRef.current?.setPosition(center);
+    if (showOrigin) {
+      if (!originRef.current && mapRef.current) {
+        originRef.current = new google.maps.Marker({
+          position: center,
+          map: mapRef.current,
+          title: 'Origin',
+          clickable: false,
+          zIndex: 9999,
+          icon: {
+            path: google.maps.SymbolPath.CIRCLE,
+            scale: 8,
+            fillColor: '#1a73e8',
+            fillOpacity: 1,
+            strokeColor: '#ffffff',
+            strokeWeight: 2,
+          },
+        });
+      } else {
+        originRef.current?.setPosition(center);
+      }
+    } else if (originRef.current) {
+      originRef.current.setMap(null);
+      originRef.current = null;
+    }
 
-    if (!circleRef.current) {
-      circleRef.current = new google.maps.Circle({
-        map: mapRef.current,
-        strokeColor: '#2563eb',
-        strokeOpacity: 0.7,
-        strokeWeight: 2,
-        fillColor: '#3b82f6',
-        fillOpacity: 0.12,
-        center,
-        radius: radiusMeters,
-        clickable: false,
-      });
-    } else {
-      circleRef.current.setCenter(center);
-      circleRef.current.setRadius(radiusMeters);
+    if (showRadius && radiusMeters > 0) {
+      if (!circleRef.current) {
+        circleRef.current = new google.maps.Circle({
+          map: mapRef.current,
+          strokeColor: '#2563eb',
+          strokeOpacity: 0.7,
+          strokeWeight: 2,
+          fillColor: '#3b82f6',
+          fillOpacity: 0.12,
+          center,
+          radius: radiusMeters,
+          clickable: false,
+        });
+      } else {
+        circleRef.current.setMap(mapRef.current);
+        circleRef.current.setCenter(center);
+        circleRef.current.setRadius(radiusMeters);
+      }
+    } else if (circleRef.current) {
+      circleRef.current.setMap(null);
+      circleRef.current = null;
     }
 
     setZoomForRadius(mapRef.current, center, radiusMeters);
-  }, [apiReady, center, radiusMeters]);
+  }, [apiReady, center, radiusMeters, showOrigin, showRadius]);
 
   // Recompute zoom on window resize so the circle stays snug
   useEffect(() => {
@@ -192,5 +230,6 @@ export default function MapView({
     });
   }, [apiReady, markers, onMarkerClick]);
 
-  return <div ref={mapDivRef} className="w-full h-[60vh] rounded-2xl border" />;
+  const containerClass = className ?? 'w-full h-[60vh] rounded-2xl border';
+  return <div ref={mapDivRef} className={containerClass} />;
 }
