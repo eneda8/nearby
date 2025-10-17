@@ -312,31 +312,36 @@ function HomePageContent() {
 
   if (showLanding) {
     return (
-      <main className="relative min-h-screen bg-[#0b0f19] text-white">
-        <div className="absolute inset-0 overflow-hidden">
-          <div className="absolute inset-0 pointer-events-none">
-            <MapView
-              center={center}
-              radiusMeters={0}
-              markers={[]}
-              className="w-full h-full"
-              showOrigin={false}
-              showRadius={false}
-            />
-          </div>
-          <div className="absolute inset-0 bg-black/55 backdrop-blur-sm" />
-        </div>
+      <main
+        className="relative min-h-screen text-white"
+        style={{
+          backgroundImage: 'url(/images/landing-map-placeholder.png)',
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          backgroundRepeat: 'no-repeat',
+          backgroundColor: '#0b0f19',
+        }}
+      >
         <div className="relative z-10 flex flex-col items-center justify-center min-h-screen px-4 text-center gap-4">
           <div>
             <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-[10px] uppercase tracking-[0.3em] text-white/70">
               Discover nearby
             </span>
-            <h1 className="mt-4 text-4xl sm:text-5xl font-semibold tracking-tight">Nearby</h1>
+            <div className="mt-4 flex items-center justify-center gap-2">
+              <img
+                src="/images/logo.png"
+                alt="Nearby logo"
+                className="h-[2.5em] w-auto shrink-0 p-0 m-0"
+                loading="eager"
+                decoding="async"
+              />
+              <h1 className="text-4xl sm:text-5xl font-semibold tracking-tight">Nearby</h1>
+            </div>
             <p className="mt-2 max-w-md text-base text-white/80">
               Find great places around any address—restaurants, essentials, and more, all in one view.
             </p>
           </div>
-          <div className="w-full max-w-md bg-white/95 text-left rounded-xl shadow-xl p-4">
+          <div className="w-full max-w-md bg-white/95 text-left rounded-xl shadow-xl p-2 pb-0">
             <AddressInput
               placeholder="Search nearby"
               onPlace={(place) => {
@@ -349,7 +354,7 @@ function HomePageContent() {
               }}
               showBranding={false}
             />
-            <div className="mt-2 text-[10px] text-gray-500 text-center">Powered by Google</div>
+            <div className="my-1 text-[10px] text-gray-500 text-center">Powered by Google</div>
           </div>
         </div>
       </main>
@@ -360,7 +365,24 @@ function HomePageContent() {
   const radiusLabel = `${Math.abs(miles - Math.round(miles)) < 1e-3 ? Math.round(miles) : miles.toFixed(1)} mi radius`;
 
   return (
-    <main className="relative h-screen overflow-hidden text-slate-900">
+    <main className="relative h-screen overflow-hidden text-slate-900 pt-12">
+      <nav className="absolute top-0 left-0 right-0 z-30 h-12 bg-[#1a73e8] bg-opacity-95 backdrop-blur-sm text-white">
+        <div className="flex h-full items-center justify-between px-4">
+          <div className="flex items-center gap-1 text-base font-semibold tracking-tight">
+            <img
+              src="/images/logo.png"
+              alt="Nearby logo"
+              className="h-6 w-auto"
+              loading="eager"
+              decoding="async"
+            />
+            <span>Nearby</span>
+         </div>
+         <div className="text-sm font-medium text-white/70">
+            {/* Future nav actions */}
+          </div>
+        </div>
+      </nav>
       <div className="absolute inset-0">
         <MapView
           center={center}
