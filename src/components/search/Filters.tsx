@@ -96,7 +96,7 @@ export default function Filters({
   return (
     <div className="space-y-2">
       {/* Dropdown row */}
-      <div className="flex flex-nowrap items-center gap-2 md:flex-wrap overflow-x-auto">
+      <div className="flex flex-wrap items-center gap-2">
         {mainCats.map((cat) => {
           const Icon = ICONS[cat.key] || FaStar;
           const selectedForCat = selectionsByCat.get(cat.key as CatKey) ?? [];

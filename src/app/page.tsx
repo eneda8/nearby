@@ -627,7 +627,7 @@ function HomePageContent() {
             }`}
           >
             <div
-              className="rounded-t-3xl bg-white px-4 pt-3 shadow-xl"
+              className="min-h-[65vh] rounded-t-3xl bg-white px-4 pt-3 pb-5 shadow-xl"
               style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 1.5rem)' }}
             >
               <div className="mx-auto mb-3 h-1 w-12 rounded-full bg-slate-200" />
@@ -641,7 +641,7 @@ function HomePageContent() {
                   Done
                 </button>
               </div>
-              <div className="space-y-4 overflow-y-auto">
+              <div className="space-y-4">
                 <div className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2 text-xs text-gray-600">
                   <span className="font-medium text-slate-700">Open now</span>
                   <Toggle checked={openNowOnly} onChange={setOpenNowOnly} />
@@ -657,17 +657,6 @@ function HomePageContent() {
                   />
                 </div>
                 <div className="flex justify-between pt-2">
-                  <button
-                    type="button"
-                    className="text-sm font-medium text-slate-500 hover:text-slate-900"
-                    onClick={() => {
-                      setSelections([]);
-                      setPlaces([]);
-                      setSelectedId(null);
-                    }}
-                  >
-                    Clear all
-                  </button>
                   <button
                     type="button"
                     className="rounded-full bg-[#1a73e8] px-4 py-2 text-xs font-semibold text-white shadow"
