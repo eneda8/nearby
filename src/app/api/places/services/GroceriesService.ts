@@ -14,21 +14,21 @@ export async function getGroceriesPlaces(
     locationRestriction: makeLocationRestriction(lat, lng, radiusMeters),
   };
   if (process.env.NODE_ENV !== "production") {
-    console.log(
-      "[Groceries] Request body:",
-      JSON.stringify(groceriesBody, null, 2)
-    );
+    // console.log(
+    //   "[Groceries] Request body:",
+    //   JSON.stringify(groceriesBody, null, 2)
+    // );
   }
   const resp = await fetchNearby(groceriesBody);
   if (process.env.NODE_ENV !== "production") {
-    console.log("[Groceries] API response status:", resp.status);
+    // console.log("[Groceries] API response status:", resp.status);
   }
   const data = await resp.json();
   if (process.env.NODE_ENV !== "production") {
-    console.log(
-      "[Groceries] API response data:",
-      JSON.stringify(data, null, 2)
-    );
+    // console.log(
+    //   "[Groceries] API response data:",
+    //   JSON.stringify(data, null, 2)
+    // );
   }
   const typeResults: GooglePlacesRaw[] = Array.isArray(data?.places)
     ? data.places

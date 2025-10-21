@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Loader } from '@googlemaps/js-api-loader';
 
 type Marker = {
@@ -8,6 +8,13 @@ type Marker = {
   position: google.maps.LatLngLiteral;
   label?: string;
   link?: string;
+  name?: string;
+  address?: string;
+  googleMapsUri?: string;
+  websiteUri?: string;
+  openNow?: boolean;
+  weekdayText?: string[];
+  primaryType?: string;
 };
 
 interface MapViewProps {
@@ -16,6 +23,7 @@ interface MapViewProps {
   markers?: Marker[];
   selectedId?: string | null;
   onMarkerClick?: (id: string) => void;
+  onMarkerHover?: (id: string | null) => void;
   className?: string;
   showOrigin?: boolean;
   showRadius?: boolean;
@@ -28,7 +36,7 @@ const MAP_STYLE: google.maps.MapTypeStyle[] = [
   { elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
   { elementType: 'labels.text.fill', stylers: [{ color: '#4b5563' }] },
   { elementType: 'labels.text.stroke', stylers: [{ color: '#ffffff' }] },
-  { featureType: 'administrative', elementType: 'geometry', stylers: [{ visibility: 'off' }] },
+  { featureType: 'administrative', elementType: 'geometry', stylers: [{ visibility: 'on' }] },
   { featureType: 'poi.business', stylers: [{ visibility: 'off' }] },
   { featureType: 'poi.medical', stylers: [{ visibility: 'off' }] },
   { featureType: 'poi.place_of_worship', stylers: [{ visibility: 'off' }] },
@@ -53,6 +61,78 @@ const MAP_STYLE: google.maps.MapTypeStyle[] = [
   { featureType: 'transit', stylers: [{ visibility: 'off' }] },
   { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#cde6ff' }] },
 ];
+
+const escapeHtml = (value?: string | null) =>
+  value
+    ? value.replace(/[&<>"']/g, (chr) => {
+        switch (chr) {
+          case '&':
+            return '&amp;';
+          case '<':
+            return '&lt;';
+          case '>':
+            return '&gt;';
+          case '"':
+            return '&quot;';
+          case "'":
+            return '&#39;';
+          default:
+            return chr;
+        }
+      })
+    : '';
+
+const escapeAttr = (value?: string | null) =>
+  escapeHtml(value)?.replace(/`/g, '&#96;');
+
+const getTodayHours = (weekdayText?: string[]) => {
+  if (!weekdayText?.length) return undefined;
+  const day = new Date().getDay(); // 0 = Sunday
+  if (weekdayText.length === 7) {
+    const idx = day === 0 ? 6 : day - 1;
+    return weekdayText[idx] ?? weekdayText[0];
+  }
+  return weekdayText[0];
+};
+
+const buildInfoContent = (data: Marker) => {
+  const name = escapeHtml(data.name ?? 'Unknown');
+  const address = escapeHtml(data.address ?? '');
+  const status =
+    typeof data.openNow === 'boolean'
+      ? data.openNow
+        ? 'Open now'
+        : 'Closed'
+      : '';
+  const statusColor = data.openNow ? '#15803d' : '#dc2626';
+  const hours = getTodayHours(data.weekdayText);
+  const links: string[] = [];
+  if (data.websiteUri) {
+    links.push(
+      `<a href="${escapeAttr(data.websiteUri)}" target="_blank" rel="noopener" style="color:#1d4ed8;font-weight:500;text-decoration:none;">Website</a>`
+    );
+  }
+  if (data.googleMapsUri) {
+    links.push(
+      `<a href="${escapeAttr(data.googleMapsUri)}" target="_blank" rel="noopener" style="color:#1d4ed8;font-weight:500;text-decoration:none;">Google Maps</a>`
+    );
+  }
+  const linksHtml = links.length
+    ? `<div style="display:flex;gap:12px;flex-wrap:wrap;">${links.join('')}</div>`
+    : '';
+
+  return `
+
+      <div style="font-weight:600;font-size:14px;margin-bottom:4px;">${name}</div>
+      ${address ? `<div style="color:#475569;margin-bottom:6px;">${address}</div>` : ''}
+      ${status ? `<div style="margin-bottom:6px;"><span style="display:inline-block;padding:2px 8px;border-radius:9999px;background:${
+        data.openNow ? '#dcfce7' : '#fee2e2'
+      };color:${statusColor};font-weight:600;font-size:11px;">${status}</span></div>` : ''}
+      ${hours ? `<div style="color:#475569;margin-bottom:6px;">${escapeHtml(hours)}</div>` : ''}
+      ${linksHtml}
+   
+  `;
+};
 
 function setZoomForRadius(
   map: google.maps.Map,
@@ -86,6 +166,7 @@ export default function MapView({
   markers = [],
   selectedId,
   onMarkerClick,
+  onMarkerHover,
   className,
   showOrigin = true,
   showRadius = true,
@@ -96,8 +177,26 @@ export default function MapView({
   const mapRef = useRef<google.maps.Map | null>(null);
   const originRef = useRef<google.maps.Marker | null>(null);
   const circleRef = useRef<google.maps.Circle | null>(null);
-  const markerRefs = useRef<Map<string, google.maps.Marker>>(new Map());
+  const markerRefs = useRef<Map<string, { marker: google.maps.Marker; data: Marker; listenersAttached?: boolean }>>(new Map());
+  const infoWindowRef = useRef<google.maps.InfoWindow | null>(null);
   const [apiReady, setApiReady] = useState(false);
+  const openInfoWindow = useCallback(
+    (id: string) => {
+      if (!mapRef.current) return;
+      const meta = markerRefs.current.get(id);
+      if (!meta) return;
+      if (!infoWindowRef.current) {
+        infoWindowRef.current = new google.maps.InfoWindow();
+      }
+      infoWindowRef.current.setContent(buildInfoContent(meta.data));
+      infoWindowRef.current.open({
+        map: mapRef.current,
+        anchor: meta.marker,
+        shouldFocus: false,
+      });
+    },
+    []
+  );
 
   useEffect(() => {
     const loader = new Loader({
@@ -254,32 +353,48 @@ export default function MapView({
       };
     };
 
-    const baseIcon = makeIcon('#f43f5e', 1);
-    const hoverIcon = makeIcon('#2563eb', 1.1);
-    const selectedIcon = makeIcon('#ef4444', 1.2);
+    const baseIcon = makeIcon('#f43f5e', 1.5);
+    const hoverIcon = makeIcon('#2563eb', 1.7);
+    const selectedIcon = makeIcon('#ef4444', 1.8);
 
-    for (const [id, mk] of markerRefs.current.entries()) {
+    for (const [id, meta] of markerRefs.current.entries()) {
       if (!markers.find((m) => m.id === id)) {
-        mk.setMap(null);
+        meta.marker.setMap(null);
         markerRefs.current.delete(id);
       }
     }
 
     markers.forEach((marker) => {
-      let mk = markerRefs.current.get(marker.id);
-      if (!mk) {
-        mk = new g.maps.Marker({
+      let meta = markerRefs.current.get(marker.id);
+      if (!meta) {
+        const mk = new g.maps.Marker({
           position: marker.position,
           map: mapRef.current!,
           title: marker.label,
           icon: baseIcon,
           zIndex: 10,
         });
-        if (onMarkerClick) mk.addListener('click', () => onMarkerClick(marker.id));
-        markerRefs.current.set(marker.id, mk);
+        mk.addListener('click', () => {
+          openInfoWindow(marker.id);
+          onMarkerClick?.(marker.id);
+        });
+        mk.addListener('mouseover', () => {
+          onMarkerHover?.(marker.id);
+        });
+        mk.addListener('mouseout', () => {
+          onMarkerHover?.(null);
+        });
+        meta = { marker: mk, data: marker, listenersAttached: true };
+        markerRefs.current.set(marker.id, meta);
       } else {
-        mk.setPosition(marker.position);
-        mk.setTitle(marker.label ?? '');
+        meta.marker.setPosition(marker.position);
+        meta.marker.setTitle(marker.label ?? '');
+        meta.data = marker;
+        if (!meta.listenersAttached) {
+          meta.marker.addListener('mouseover', () => onMarkerHover?.(marker.id));
+          meta.marker.addListener('mouseout', () => onMarkerHover?.(null));
+          meta.listenersAttached = true;
+        }
       }
 
       let icon = baseIcon;
@@ -292,10 +407,23 @@ export default function MapView({
         zIndex = 20;
       }
 
-      mk.setIcon(icon);
-      mk.setZIndex(zIndex);
+      meta.marker.setIcon(icon);
+      meta.marker.setZIndex(zIndex);
     });
-  }, [apiReady, markers, onMarkerClick, hoverId, selectedId]);
+
+    if (selectedId && !markerRefs.current.has(selectedId)) {
+      infoWindowRef.current?.close();
+    }
+  }, [apiReady, markers, onMarkerClick, hoverId, selectedId, openInfoWindow]);
+
+  useEffect(() => {
+    if (!apiReady) return;
+    if (selectedId) {
+      openInfoWindow(selectedId);
+    } else {
+      infoWindowRef.current?.close();
+    }
+  }, [apiReady, selectedId, openInfoWindow]);
 
   const containerClass = className ?? 'w-full h-[60vh] rounded-2xl border';
   return <div ref={mapDivRef} className={containerClass} />;

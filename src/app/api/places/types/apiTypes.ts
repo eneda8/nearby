@@ -24,6 +24,7 @@ export type PlaceResponseItem = {
   primaryType: string;
   types: string[];
   googleMapsUri: string;
+  websiteUri?: string;
   location: { lat: number; lng: number };
   directDistanceMeters: number | null;
   rating?: number; // Star rating (0-5)
@@ -48,6 +49,7 @@ export type GooglePlacesRaw = {
   primaryType?: string;
   types?: string[];
   googleMapsUri?: string;
+  websiteUri?: string;
   directDistanceMeters?: number;
   rating?: number; // Star rating (0-5)
   openNow?: boolean; // Is the place open now?

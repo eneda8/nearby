@@ -133,8 +133,14 @@ function HomePageContent() {
       filteredPlaces.map((p) => ({
         id: p.id,
         position: p.location,
+        name: p.name,
         label: p.name,
-        link: p.googleMapsUri,
+        address: p.address,
+        googleMapsUri: p.googleMapsUri,
+        websiteUri: p.websiteUri,
+        openNow: p.openNow,
+        weekdayText: p.currentOpeningHours?.weekdayDescriptions ?? [],
+        primaryType: p.primaryType,
       })),
     [filteredPlaces]
   );
@@ -390,6 +396,7 @@ function HomePageContent() {
           markers={markers}
           selectedId={selectedId}
           onMarkerClick={(id: string) => setSelectedId(id)}
+          onMarkerHover={setHoverId}
           className="w-full h-full"
           showOrigin
           showRadius

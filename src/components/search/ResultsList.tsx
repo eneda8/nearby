@@ -17,6 +17,7 @@ export interface PlaceItem {
   };
   userRatingCount?: number;
   googleMapsUri?: string;
+  websiteUri?: string;
   directDistanceMeters?: number;
   driveDurationSec?: number;
   driveDistanceMeters?: number;
@@ -138,7 +139,7 @@ export default function ResultsList({
                       : 'Closed';
                     return (
                       <span
-                        className={`text-[11px] leading-tight px-1.5 py-0.5 rounded-full ${badgeClass}`}
+                        className={`text-[11px] px-1.5 my-0 rounded ${badgeClass}`}
                         title={closingSoon ? 'Closing soon (within 1 hour)' : undefined}
                         aria-label={closingSoon ? 'Open but closing within an hour' : badgeText}
                       >

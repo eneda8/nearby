@@ -43,6 +43,7 @@ export function shapePlacesResponse(
         primaryType: p.primaryType ?? "",
         types: p.types ?? [],
         googleMapsUri: p.googleMapsUri ?? "",
+        websiteUri: p.websiteUri ?? undefined,
         location: position,
         directDistanceMeters:
           p.directDistanceMeters !== undefined

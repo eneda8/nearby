@@ -11,6 +11,7 @@ const FIELD_MASK = [
   "places.primaryType",
   "places.types",
   "places.googleMapsUri",
+  "places.websiteUri",
   "places.rating",
   "places.currentOpeningHours",
 ].join(",");

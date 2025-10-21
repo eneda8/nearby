@@ -190,12 +190,12 @@ export async function POST(req: NextRequest) {
       includedTypes,
     });
     // Debug: log raw results before filtering
-    if (process.env.NODE_ENV !== "production") {
-      console.log(
-        `[${category}] raw results:`,
-        JSON.stringify(filtered, null, 2)
-      );
-    }
+    // if (process.env.NODE_ENV !== "production") {
+    //   console.log(
+    //     `[${category}] raw results:`,
+    //     JSON.stringify(filtered, null, 2)
+    //   );
+    // }
     logCategory(`[${category}] filtered:`, filtered);
 
     // --- Response shaping ---
