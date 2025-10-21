@@ -96,7 +96,7 @@ export default function Filters({
   return (
     <div className="space-y-2">
       {/* Dropdown row */}
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-nowrap items-center gap-2 md:flex-wrap overflow-x-auto">
         {mainCats.map((cat) => {
           const Icon = ICONS[cat.key] || FaStar;
           const selectedForCat = selectionsByCat.get(cat.key as CatKey) ?? [];
@@ -107,7 +107,7 @@ export default function Filters({
                 type="button"
                 id={`cat-trigger-${cat.key}`}
                 onClick={() => setOpenDropdown((prev) => (prev === cat.key ? null : cat.key))}
-                className={`h-8 px-3 rounded-lg border flex items-center gap-1.5 text-xs bg-white transition shadow-sm ${
+                className={`h-8 px-3 rounded-lg border flex items-center gap-1.5 text-xs bg-white transition shadow-sm whitespace-nowrap ${
                   active ? 'border-slate-400 shadow-md' : 'border-slate-200 hover:border-slate-300'
                 }`}
               >

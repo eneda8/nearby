@@ -49,7 +49,7 @@ export default function ResultsList({
   if (!items?.length) return null;
 
   return (
-    <div className="mt-1 flex flex-col gap-2">
+    <div className="mt-1 flex flex-col gap-3">
       {items.map((p) => {
         const link =
           p.googleMapsUri ||
@@ -80,36 +80,35 @@ export default function ResultsList({
             onKeyDown={handleKeyDown}
             onMouseEnter={() => onHover?.(p.id)}
             onMouseLeave={() => onHover?.(null)}
-            className={`w-full text-left rounded-xl border transition focus:outline-none focus:ring-2 focus:ring-slate-900/40 cursor-pointer p-4 ${
+            className={`w-full text-left rounded-2xl border transition focus:outline-none focus:ring-2 focus:ring-slate-900/40 cursor-pointer px-3 py-3 ${
               active
                 ? 'border-slate-900/60 bg-white shadow-lg shadow-slate-900/10'
                 : 'border-slate-200 bg-white hover:border-slate-300 hover:shadow-md'
             }`}
           >
             <div className="flex items-start gap-3">
-              <div
-                className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border ${
-                  active
-                    ? 'bg-red-500 text-white border-red-500'
-                    : 'bg-red-50 text-red-500 border-red-200'
-                }`}
-              >
-                <FaMapMarkerAlt className="w-3.5 h-3.5" />
+              <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-red-500 text-white">
+                <FaMapMarkerAlt className="h-3 w-3" />
               </div>
               <div className="flex-1 min-w-0 space-y-1">
-                <div className="flex flex-wrap items-baseline gap-2">
+                <div className="flex items-center gap-2">
                   <a
                     href={link}
                     target="_blank"
                     rel="noreferrer"
                     onClick={(e) => e.stopPropagation()}
-                    className="font-semibold text-sm leading-tight text-slate-900 hover:underline"
+                    className="flex-1 truncate text-sm font-semibold text-slate-900 hover:underline"
                   >
                     {p.name}
                   </a>
+                  {miles !== undefined && (
+                    <span className="text-xs text-slate-500">{miles.toFixed(2)} mi</span>
+                  )}
+                </div>
+                <div className="flex flex-wrap items-center gap-2 text-[11px]">
                   {typeof p.rating === 'number' && (
-                    <span className="flex items-center gap-1 text-[11px] font-medium text-slate-600">
-                      <FaStar className="text-yellow-500 w-3 h-3" />
+                    <span className="flex items-center gap-1 font-medium text-slate-600">
+                      <FaStar className="h-3 w-3 text-yellow-500" />
                       <span className="text-yellow-700">{p.rating.toFixed(1)}</span>
                     </span>
                   )}
@@ -139,7 +138,7 @@ export default function ResultsList({
                       : 'Closed';
                     return (
                       <span
-                        className={`text-[11px] px-1.5 my-0 rounded ${badgeClass}`}
+                        className={`rounded px-1.5 py-0.5 text-[11px] ${badgeClass}`}
                         title={closingSoon ? 'Closing soon (within 1 hour)' : undefined}
                         aria-label={closingSoon ? 'Open but closing within an hour' : badgeText}
                       >
@@ -147,22 +146,27 @@ export default function ResultsList({
                       </span>
                     );
                   })()}
+                  <div className="ml-auto flex items-center gap-2 text-xs text-slate-500">
+                    {driveMinutes !== undefined && (
+                      <span className="flex items-center gap-1">
+                        <FaCar className="h-3 w-3" />
+                        {driveMinutes} min
+                      </span>
+                    )}
+                    {walkMinutes !== undefined && (
+                      <span className="flex items-center gap-1">
+                        <FaWalking className="h-3 w-3" />
+                        {walkMinutes} min
+                      </span>
+                    )}
+                  </div>
                 </div>
                 {p.primaryType && (
-                  <div className="text-[11px] text-slate-500">{p.primaryType.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}</div>
+                  <div className="truncate text-[11px] text-slate-500">
+                    {p.primaryType.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
+                  </div>
                 )}
-                <div className="text-[11px] text-slate-600">{p.address}</div>
-              </div>
-              <div className="flex flex-col items-end gap-1 text-slate-500 text-xs whitespace-nowrap pl-2">
-                {miles !== undefined && <span>{miles.toFixed(2)} mi</span>}
-                <div className="flex items-center gap-2">
-                  {driveMinutes !== undefined && (
-                    <span className="flex items-center gap-1"><FaCar className="w-3 h-3" />{driveMinutes} min</span>
-                  )}
-                  {walkMinutes !== undefined && (
-                    <span className="flex items-center gap-1"><FaWalking className="w-3 h-3" />{walkMinutes} min</span>
-                  )}
-                </div>
+                <div className="truncate text-[11px] text-slate-600">{p.address}</div>
               </div>
             </div>
           </div>

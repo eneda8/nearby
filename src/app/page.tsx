@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useEffect, useMemo, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import MapView from '@/components/map/MapView';
 import AddressInput from '@/components/search/AddressInput';
 import Controls from '@/components/search/Controls';
@@ -88,12 +88,53 @@ function HomePageContent() {
 
   // Open now toggle
   const [openNowOnly, setOpenNowOnly] = useState(true); // default to true
+  const [showMobileFilters, setShowMobileFilters] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  const selectedTokens = useMemo(() => {
+    return selections
+      .map((sel) => {
+        const cat = CATEGORIES.find((c) => c.key === sel.parent);
+        const sub = cat?.subs.find((s) => s.key === sel.subKey);
+        if (!sub) return null;
+        return { ...sel, label: sub.label };
+      })
+      .filter(Boolean) as Array<Selection & { label: string }>;
+  }, [selections]);
+
+  const removeSelection = useCallback((parent: Selection['parent'], subKey: string) => {
+    setSelections((prev) => prev.filter((s) => !(s.parent === parent && s.subKey === subKey)));
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mq = window.matchMedia('(max-width: 767px)');
+    const update = () => setIsMobile(mq.matches);
+    update();
+    if (typeof mq.addEventListener === 'function') {
+      mq.addEventListener('change', update);
+      return () => mq.removeEventListener('change', update);
+    }
+    mq.addListener(update);
+    return () => mq.removeListener(update);
+  }, []);
 
   // Filtered places based on openNowOnly
   const filteredPlaces = useMemo(
     () => (openNowOnly ? places.filter((p) => p.openNow) : places),
     [places, openNowOnly]
   );
+
+  useEffect(() => {
+    if (!isMobile) return;
+    const original = document.body.style.overflow;
+    if (showMobileFilters) {
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = original;
+      };
+    }
+    document.body.style.overflow = original;
+  }, [showMobileFilters, isMobile]);
 
   useEffect(() => {
     if (hoverId && !filteredPlaces.some((p) => p.id === hoverId)) {
@@ -368,77 +409,31 @@ function HomePageContent() {
   }
 
   const miles = radiusMeters / 1609.344;
-  const radiusLabel = `${Math.abs(miles - Math.round(miles)) < 1e-3 ? Math.round(miles) : miles.toFixed(1)} mi radius`;
+  const radiusLabel = `${Math.abs(miles - Math.round(miles)) < 1e-3 ? Math.round(miles) : miles.toFixed(1)} mi`;
+  const addressLabel = selectedAddress || (haveOrigin ? 'Current map center' : 'Choose an address to begin');
+  const hasSelections = selections.length > 0;
+  const placeCountLabel =
+    filteredPlaces.length > 0
+      ? `${filteredPlaces.length} ${filteredPlaces.length === 1 ? 'place' : 'places'}`
+      : hasSelections
+      ? 'No matches'
+      : '';
 
   return (
-    <main className="relative h-screen overflow-hidden text-slate-900 pt-12">
-      <nav className="absolute top-0 left-0 right-0 z-30 h-12 bg-[#1a73e8] bg-opacity-95 backdrop-blur-sm text-white">
-        <div className="flex h-full items-center justify-between px-4">
-          <div className="flex items-center gap-1 text-base font-semibold tracking-tight">
+    <main className="flex h-screen flex-col bg-slate-100 text-slate-900 md:flex-row md:overflow-hidden">
+      <div className="flex flex-col md:flex-1 md:overflow-hidden">
+        <header className="sticky top-0 z-30 flex items-center gap-2 bg-[#1a73e8] px-3 py-2 text-white shadow-md md:absolute md:left-6 md:top-6 md:w-auto md:rounded-full md:bg-[#1a73e8]/90 md:px-5 md:py-2 md:shadow-lg md:backdrop-blur">
+          <div className="flex items-center gap-1 text-sm font-semibold tracking-tight md:text-base">
             <img
               src="/images/logo.png"
               alt="Nearby logo"
-              className="h-6 w-auto"
+              className="h-5 w-auto md:h-6"
               loading="eager"
               decoding="async"
             />
             <span>Nearby</span>
          </div>
-         <div className="text-sm font-medium text-white/70">
-            {/* Future nav actions */}
-          </div>
-        </div>
-      </nav>
-      <div className="absolute inset-0">
-        <MapView
-          center={center}
-          radiusMeters={radiusMeters}
-          markers={markers}
-          selectedId={selectedId}
-          onMarkerClick={(id: string) => setSelectedId(id)}
-          onMarkerHover={setHoverId}
-          className="w-full h-full"
-          showOrigin
-          showRadius
-          panOffsetPixels={{ x: 300, y: 0 }}
-          hoverId={hoverId}
-        />
-        <div className="absolute inset-0 bg-gradient-to-r from-[#0b0f19]/25 via-transparent to-transparent pointer-events-none" />
-      </div>
-      <div className="relative z-10 flex h-full w-full justify-end pointer-events-none">
-        <section className="pointer-events-auto w-full max-w-xl bg-white/95 backdrop-blur-md shadow-[0_35px_120px_-40px_rgba(15,23,42,0.75)] flex flex-col border-l border-white/40">
-          <header className="px-6 pt-6 pb-4 border-b border-black/5">
-            <p className="text-[10px] uppercase tracking-[0.3em] text-gray-400">Current address</p>
-            <div className="mt-1 flex items-start justify-between gap-3">
-              <h2 className="text-lg font-semibold text-slate-900 leading-tight truncate">
-                {selectedAddress || 'Choose an address to begin'}
-              </h2>
-              {haveOrigin && (
-                <button
-                  type="button"
-                  onClick={handleCopyLink}
-                  className="flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-900 transition"
-                  title={copySuccess === 'copied' ? 'Copied!' : copySuccess === 'error' ? 'Unable to copy' : 'Copy shareable link'}
-                >
-                  <FiLink className="w-4 h-4" />
-                  <span>
-                    {copySuccess === 'copied'
-                      ? 'Copied'
-                      : copySuccess === 'error'
-                      ? 'Try again'
-                      : 'Copy link'}
-                  </span>
-                </button>
-              )}
-            </div>
-            <p className="mt-1.5 text-[11px] text-gray-500">
-              {filteredPlaces.length > 0
-                ? `${filteredPlaces.length} ${filteredPlaces.length === 1 ? 'place' : 'places'} • ${radiusLabel}`
-                : radiusLabel}
-            </p>
-          </header>
-
-          <div className="px-6 pt-5 pb-4 border-b border-black/5 space-y-3">
+          <div className="ml-3 flex-1 md:hidden">
             <AddressInput
               placeholder="Search nearby"
               onPlace={(place) => {
@@ -449,48 +444,243 @@ function HomePageContent() {
                 setSelectedAddress(place.formatted_address ?? place.name ?? '');
                 setSelectedId(null);
               }}
+              showBranding={false}
             />
-            <div className="flex flex-wrap items-center justify-between gap-3 text-[11px] text-gray-600">
-              <Controls onRadiusChange={setRadiusMeters} />
+          </div>
+        </header>
+        <div className={isMobile ? 'h-[38vh] w-full' : 'relative flex-1'}>
+          <div className={isMobile ? 'h-full w-full' : 'absolute inset-0 h-full w-full'}>
+            <MapView
+              center={center}
+              radiusMeters={radiusMeters}
+              markers={markers}
+              selectedId={selectedId}
+              onMarkerClick={(id: string) => setSelectedId(id)}
+              onMarkerHover={setHoverId}
+              className="h-full w-full"
+              showOrigin
+              showRadius
+              panOffsetPixels={isMobile ? undefined : { x: 300, y: 0 }}
+              hoverId={hoverId}
+            />
+            <div className="pointer-events-none absolute inset-0 hidden bg-gradient-to-r from-[#0b0f19]/25 via-transparent to-transparent md:block" />
+          </div>
+        </div>
+        {isMobile && (
+          <div className="border-b bg-white px-4 pb-3 pt-2 shadow-sm">
+            <div className="flex items-center justify-between gap-3">
+              <span className="truncate text-sm font-semibold text-slate-900">{addressLabel}</span>
+              {haveOrigin && (
+                <button
+                  type="button"
+                  onClick={handleCopyLink}
+                  className="rounded-full border border-white/30 bg-white/10 p-1.5 text-white transition hover:bg-white/20"
+                  title={copySuccess === 'copied' ? 'Copied!' : copySuccess === 'error' ? 'Unable to copy' : 'Copy shareable link'}
+                >
+                  <FiLink className="h-4 w-4" />
+                  <span className="sr-only">Copy link</span>
+                </button>
+              )}
+            </div>
+            <div className="mt-1 flex items-center justify-between gap-2 text-xs text-slate-600">
+              {placeCountLabel && <span>{placeCountLabel}</span>}
               <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowMobileFilters((prev) => !prev)}
+                  className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-medium text-slate-700 shadow-sm"
+                >
+                  <span>Filters{selections.length ? ` (${selections.length})` : ''}</span>
+                  <span className={`transform transition ${showMobileFilters ? 'rotate-180' : ''}`}>
+                    ▼
+                  </span>
+                </button>
+                <Controls onRadiusChange={setRadiusMeters} />
+              </div>
+            </div>
+            {selectedTokens.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {selectedTokens.map((token) => (
+                  <span
+                    key={`${token.parent}:${token.subKey}`}
+                    className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] text-slate-700"
+                  >
+                    {token.label}
+                    <button
+                      type="button"
+                      className="opacity-60 hover:opacity-100"
+                      onClick={() => removeSelection(token.parent, token.subKey)}
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setSelections([])}
+                  className="inline-flex items-center rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-[11px] text-slate-600 hover:border-slate-300"
+                >
+                  Clear all
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+      <section className="flex-1 overflow-y-auto bg-white md:max-w-xl md:border-l md:border-white/40 md:bg-white/95 md:backdrop-blur-md md:shadow-[0_35px_120px_-40px_rgba(15,23,42,0.75)]">
+        <div className="hidden border-b border-black/5 px-6 pt-5 pb-4 md:block">
+          <AddressInput
+            placeholder="Search nearby"
+            onPlace={(place) => {
+              const loc = place.geometry!.location!;
+              setCenter({ lat: loc.lat(), lng: loc.lng() });
+              setHaveOrigin(true);
+              setShowLanding(false);
+              setSelectedAddress(place.formatted_address ?? place.name ?? '');
+              setSelectedId(null);
+            }}
+          />
+          <div className="mt-3 flex items-center gap-2 text-[11px] text-gray-600 md:hidden">
+            <span className="font-medium">Open now</span>
+            <Toggle checked={openNowOnly} onChange={setOpenNowOnly} />
+          </div>
+        </div>
+        <header className="hidden border-b border-black/5 px-6 pt-6 pb-4 md:block">
+          <p className="text-[10px] uppercase tracking-[0.3em] text-gray-400">Current address</p>
+          <div className="mt-1 flex items-start justify-between gap-3">
+            <h2 className="truncate text-lg font-semibold leading-tight text-slate-900">
+              {addressLabel}
+            </h2>
+            {haveOrigin && (
+              <button
+                type="button"
+                onClick={handleCopyLink}
+                className="text-[#1a73e8] transition hover:text-[#0f4db8]"
+                title={copySuccess === 'copied' ? 'Copied!' : copySuccess === 'error' ? 'Unable to copy' : 'Copy shareable link'}
+              >
+                <FiLink className="h-4 w-4" />
+                <span className="sr-only">Copy link</span>
+              </button>
+            )}
+          </div>
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-3 text-xs text-gray-500">
+            {placeCountLabel && <span>{placeCountLabel}</span>}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowMobileFilters((prev) => !prev)}
+                className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-medium text-slate-700 shadow-sm"
+              >
+                <span>Filters{selections.length ? ` (${selections.length})` : ''}</span>
+                <span className={`transform transition ${showMobileFilters ? 'rotate-180' : ''}`}>
+                  ▼
+                </span>
+              </button>
+              <Controls onRadiusChange={setRadiusMeters} />
+              <div className="ml-2 flex items-center gap-2 text-[11px] text-slate-600">
                 <span className="font-medium">Open now</span>
                 <Toggle checked={openNowOnly} onChange={setOpenNowOnly} />
               </div>
             </div>
           </div>
+        </header>
+        <div className="hidden border-b border-black/5 px-6 py-3 md:block">
+          <Filters
+            selections={selections}
+            onChange={setSelections}
+            onClearAll={() => {
+              setPlaces([]);
+              setSelectedId(null);
+            }}
+          />
+        </div>
 
-          <div className="px-6 py-3 border-b border-black/5">
-            <Filters
-              selections={selections}
-              onChange={setSelections}
-              onClearAll={() => {
-                setPlaces([]);
-                setSelectedId(null);
-              }}
+        <div className="space-y-3 px-4 py-4 md:px-6 md:py-5">
+          {loading && <div className="opacity-70">Searching nearby…</div>}
+          {error && <div className="break-all text-red-600">{error}</div>}
+          {!loading && filteredPlaces.length === 0 && !error && (
+            <div className="text-sm opacity-70">
+              {hasSelections
+                ? 'No places match your filters here. Try a larger radius or different categories.'
+                : 'Pick a category or adjust filters to explore nearby places.'}
+            </div>
+          )}
+          {filteredPlaces.length > 0 && (
+            <ResultsList
+              items={filteredPlaces}
+              selectedId={selectedId}
+              onSelect={(id: string) => setSelectedId(id)}
+              onHover={setHoverId}
             />
-          </div>
-
-          <div className="flex-1 overflow-y-auto px-6 py-5 space-y-3">
-            {loading && <div className="opacity-70">Searching nearby…</div>}
-            {error && <div className="text-red-600 break-all">{error}</div>}
-            {!loading && filteredPlaces.length === 0 && !error && (
-              <div className="text-sm opacity-70">
-                {places.length === 0
-                  ? 'No places match your filters here. Try a larger radius or different categories.'
-                  : 'Everything here is closed right now. Turn off “Open now” or adjust filters.'}
+          )}
+        </div>
+      </section>
+      {isMobile && (
+        <>
+          <div
+            className={`fixed inset-0 z-40 bg-slate-900/40 transition-opacity duration-200 ${showMobileFilters ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
+            onClick={() => setShowMobileFilters(false)}
+          />
+          <div
+            className={`fixed inset-x-0 bottom-0 z-50 transform transition-transform duration-300 ${
+              showMobileFilters ? 'translate-y-0' : 'translate-y-full'
+            }`}
+          >
+            <div
+              className="rounded-t-3xl bg-white px-4 pt-3 shadow-xl"
+              style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 1.5rem)' }}
+            >
+              <div className="mx-auto mb-3 h-1 w-12 rounded-full bg-slate-200" />
+              <div className="mb-4 flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-slate-900">Filters</h3>
+                <button
+                  type="button"
+                  className="text-sm font-medium text-[#1a73e8]"
+                  onClick={() => setShowMobileFilters(false)}
+                >
+                  Done
+                </button>
               </div>
-            )}
-            {filteredPlaces.length > 0 && (
-              <ResultsList
-                items={filteredPlaces}
-                selectedId={selectedId}
-                onSelect={(id: string) => setSelectedId(id)}
-                onHover={setHoverId}
-              />
-            )}
+              <div className="space-y-4 overflow-y-auto">
+                <div className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2 text-xs text-gray-600">
+                  <span className="font-medium text-slate-700">Open now</span>
+                  <Toggle checked={openNowOnly} onChange={setOpenNowOnly} />
+                </div>
+                <div className="rounded-xl border border-slate-200 p-3">
+                  <Filters
+                    selections={selections}
+                    onChange={setSelections}
+                    onClearAll={() => {
+                      setPlaces([]);
+                      setSelectedId(null);
+                    }}
+                  />
+                </div>
+                <div className="flex justify-between pt-2">
+                  <button
+                    type="button"
+                    className="text-sm font-medium text-slate-500 hover:text-slate-900"
+                    onClick={() => {
+                      setSelections([]);
+                      setPlaces([]);
+                      setSelectedId(null);
+                    }}
+                  >
+                    Clear all
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-full bg-[#1a73e8] px-4 py-2 text-xs font-semibold text-white shadow"
+                    onClick={() => setShowMobileFilters(false)}
+                  >
+                    Apply filters
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
-        </section>
-      </div>
+        </>
+      )}
     </main>
   );
 }

@@ -60,7 +60,7 @@ export default function AddressInput({ onPlace, placeholder = 'Enter an address'
           type="text"
           placeholder={placeholder}
           autoComplete="off"
-          className="w-full h-8 rounded-lg border border-gray-300 pl-7 pr-2.5 text-[11px] focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 placeholder:text-gray-400"
+          className="w-full h-9 rounded-full border border-white/40 bg-white/95 pl-8 pr-3 text-[12px] text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-white focus:outline-none focus:ring-2 focus:ring-white/70"
         />
       </div>
       {showBranding && (

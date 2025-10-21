@@ -212,7 +212,6 @@ export default function MapView({
 
       const map = new google.maps.Map(mapDivRef.current, {
         center,
-        zoom: 14,
         streetViewControl: false,
         fullscreenControl: true,
         mapTypeControl: false,
@@ -322,11 +321,6 @@ export default function MapView({
     } else if (circleRef.current) {
       circleRef.current.setMap(null);
       circleRef.current = null;
-    }
-
-    setZoomForRadius(mapRef.current, center, radiusMeters);
-    if (panOffsetPixels) {
-      mapRef.current.panBy(panOffsetPixels.x, panOffsetPixels.y);
     }
   }, [apiReady, center, radiusMeters, showOrigin, showRadius, panOffsetPixels]);
 

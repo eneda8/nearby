@@ -17,21 +17,16 @@ export default function Controls({
   };
 
   return (
-    <div className="flex flex-wrap items-center gap-1.5">
-      <div className="flex items-center gap-1">
-        <label className="text-[11px] font-medium">Radius</label>
-        <select
-          className="h-7 px-2 rounded-md border bg-background text-[11px]"
-          value={miles}
-          onChange={handleMilesChange}
-        >
-          {MILE_OPTIONS.map((opt) => (
-            <option key={opt} value={opt}>
-              {opt} mile{opt === 1 ? '' : 's'}
-            </option>
-          ))}
-        </select>
-      </div>
-    </div>
+    <select
+      className="h-7 rounded-full border border-slate-200 bg-white px-3 text-[11px] font-medium text-slate-700 shadow-sm focus:border-slate-400 focus:outline-none"
+      value={miles}
+      onChange={handleMilesChange}
+    >
+      {MILE_OPTIONS.map((opt) => (
+        <option key={opt} value={opt}>
+          {opt} mile{opt === 1 ? '' : 's'}
+        </option>
+      ))}
+    </select>
   );
 }
