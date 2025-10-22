@@ -1,30 +1,15 @@
 'use client';
-import { useEffect, KeyboardEvent } from 'react';
-import { FaMapMarkerAlt, FaStar, FaCar, FaWalking } from 'react-icons/fa';
+import { useEffect, KeyboardEvent, MouseEvent } from 'react';
+import { FaMapMarkerAlt, FaStar, FaCar, FaWalking, FaThumbtack } from 'react-icons/fa';
+import type { PlaceResponseItem } from '@/app/api/places/types/apiTypes';
 
-export interface PlaceItem {
-  id: string;
-  name: string;
-  address: string;
-  location: { lat: number; lng: number };
-  primaryType?: string;
-  rating?: number | null;
-  openNow?: boolean;
-  currentOpeningHours?: {
-    openNow?: boolean;
-    periods?: any[];
-    weekdayDescriptions?: string[];
-  };
-  userRatingCount?: number;
-  googleMapsUri?: string;
-  websiteUri?: string;
-  directDistanceMeters?: number;
+export type PlaceItem = PlaceResponseItem & {
   driveDurationSec?: number;
   driveDistanceMeters?: number;
   walkDurationSec?: number;
   walkDistanceMeters?: number;
   distanceMeters?: number;
-}
+};
 
 function metersToMiles(m: number) { return m / 1609.344; }
 function secondsToMin(s: number) { return Math.round(s / 60); }
@@ -34,11 +19,15 @@ export default function ResultsList({
   selectedId,
   onSelect,
   onHover,
+  pinnedIds,
+  onTogglePin,
 }: {
   items: PlaceItem[];
   selectedId?: string | null;
   onSelect?: (id: string) => void;
   onHover?: (id: string | null) => void;
+  pinnedIds?: ReadonlySet<string>;
+  onTogglePin?: (place: PlaceItem) => void;
 }) {
   useEffect(() => {
     if (!selectedId) return;
@@ -61,6 +50,7 @@ export default function ResultsList({
         const driveMinutes = p.driveDurationSec ? secondsToMin(p.driveDurationSec) : undefined;
         const walkMinutes = p.walkDurationSec ? secondsToMin(p.walkDurationSec) : undefined;
         const active = selectedId === p.id;
+        const isPinned = pinnedIds ? pinnedIds.has(p.id) : false;
 
         const handleActivate = () => onSelect?.(p.id);
         const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
@@ -69,6 +59,11 @@ export default function ResultsList({
             handleActivate();
           }
         };
+        const handlePinToggle = (e: MouseEvent<HTMLButtonElement>) => {
+          e.stopPropagation();
+          onTogglePin?.(p);
+        };
+        const pinButtonLabel = isPinned ? 'Unpin place' : 'Pin place';
 
         return (
           <div
@@ -91,19 +86,44 @@ export default function ResultsList({
                 <FaMapMarkerAlt className="h-3 w-3" />
               </div>
               <div className="flex-1 min-w-0 space-y-1">
-                <div className="flex items-center gap-2">
-                  <a
-                    href={link}
-                    target="_blank"
-                    rel="noreferrer"
-                    onClick={(e) => e.stopPropagation()}
-                    className="flex-1 truncate text-sm font-semibold text-slate-900 hover:underline"
-                  >
-                    {p.name}
-                  </a>
-                  {miles !== undefined && (
-                    <span className="text-xs text-slate-500">{miles.toFixed(2)} mi</span>
-                  )}
+                <div className="flex items-start gap-2">
+                  <div className="flex min-w-0 flex-1 items-center gap-2">
+                    <a
+                      href={link}
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="truncate text-sm font-semibold text-slate-900 hover:underline"
+                    >
+                      {p.name}
+                    </a>
+                    {isPinned && (
+                      <span className="rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-orange-700">
+                        Pinned
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {miles !== undefined && (
+                      <span className="whitespace-nowrap text-xs text-slate-500">{miles.toFixed(2)} mi</span>
+                    )}
+                    {onTogglePin && (
+                      <button
+                        type="button"
+                        onClick={handlePinToggle}
+                        className={`rounded-full border px-1.5 py-1 transition ${
+                          isPinned
+                            ? 'border-orange-300 bg-orange-50 text-orange-700 hover:bg-orange-100'
+                            : 'border-transparent text-slate-400 hover:border-slate-300 hover:bg-slate-100 hover:text-slate-600'
+                        }`}
+                        aria-pressed={isPinned}
+                        title={pinButtonLabel}
+                      >
+                        <FaThumbtack className={`h-3.5 w-3.5 ${isPinned ? 'rotate-12' : ''}`} />
+                        <span className="sr-only">{pinButtonLabel}</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 text-[11px]">
                   {typeof p.rating === 'number' && (
@@ -118,8 +138,12 @@ export default function ResultsList({
                       const now = new Date();
                       const day = now.getDay();
                       const minutesNow = now.getHours() * 60 + now.getMinutes();
-                      const todayPeriod = p.currentOpeningHours.periods.find((per: any) => per.open?.day === day);
-                      if (todayPeriod && todayPeriod.close?.hour != null && todayPeriod.close?.minute != null) {
+                      const periods = p.currentOpeningHours.periods ?? [];
+                      const todayPeriod = periods.find((period) => period.open?.day === day);
+                      if (
+                        todayPeriod?.close?.hour != null &&
+                        todayPeriod.close.minute != null
+                      ) {
                         const closeMinutes = todayPeriod.close.hour * 60 + todayPeriod.close.minute;
                         if (closeMinutes - minutesNow <= 60 && closeMinutes - minutesNow > 0) {
                           closingSoon = true;

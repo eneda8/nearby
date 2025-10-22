@@ -1,6 +1,7 @@
 'use client';
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import Image from 'next/image';
 import MapView from '@/components/map/MapView';
 import AddressInput from '@/components/search/AddressInput';
 import Controls from '@/components/search/Controls';
@@ -14,6 +15,92 @@ import { useSearchParams } from 'next/navigation';
 const DEV_ORIGIN = process.env.NEXT_PUBLIC_DEV_ORIGIN
   ? process.env.NEXT_PUBLIC_DEV_ORIGIN.split(',').map(Number)
   : null;
+
+type RouteMatrixElement = {
+  destinationIndex?: number | string;
+  travelMode?: string;
+  duration?: string | { seconds?: number | string };
+  distanceMeters?: number;
+};
+
+const isRouteMatrixElement = (value: unknown): value is RouteMatrixElement => {
+  if (typeof value !== 'object' || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  const { destinationIndex, travelMode, duration, distanceMeters } = candidate;
+
+  const destinationIndexValid =
+    destinationIndex === undefined ||
+    typeof destinationIndex === 'number' ||
+    typeof destinationIndex === 'string';
+
+  const travelModeValid = travelMode === undefined || typeof travelMode === 'string';
+  const distanceValid = distanceMeters === undefined || typeof distanceMeters === 'number';
+
+  const durationValid =
+    duration === undefined ||
+    typeof duration === 'string' ||
+    (typeof duration === 'object' &&
+      duration !== null &&
+      (typeof (duration as { seconds?: unknown }).seconds === 'number' ||
+        typeof (duration as { seconds?: unknown }).seconds === 'string' ||
+        (duration as { seconds?: unknown }).seconds === undefined));
+
+  return destinationIndexValid && travelModeValid && distanceValid && durationValid;
+};
+
+const safeJsonParse = (value: string): unknown => {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+};
+
+const parseRouteMatrixElements = (payload: string): RouteMatrixElement[] => {
+  const trimmed = payload.trim();
+  if (!trimmed) return [];
+
+  const raw: unknown =
+    trimmed.startsWith('{') || trimmed.startsWith('[')
+      ? safeJsonParse(trimmed)
+      : trimmed
+          .split('\n')
+          .map((line) => line.trim())
+          .filter(Boolean)
+          .map((line) => safeJsonParse(line));
+
+  if (Array.isArray(raw)) {
+    return raw.filter(isRouteMatrixElement);
+  }
+
+  if (
+    typeof raw === 'object' &&
+    raw !== null &&
+    Array.isArray((raw as { elements?: unknown[] }).elements)
+  ) {
+    return (raw as { elements: unknown[] }).elements.filter(isRouteMatrixElement);
+  }
+
+  return [];
+};
+
+const parseDurationSeconds = (
+  value: RouteMatrixElement['duration']
+): number | undefined => {
+  if (typeof value === 'string') {
+    const match = value.match(/^(\d+(?:\.\d+)?)s$/);
+    return match ? Number(match[1]) : undefined;
+  }
+  if (typeof value === 'object' && value !== null) {
+    const seconds = (value as { seconds?: number | string }).seconds;
+    if (typeof seconds === 'number') return seconds;
+    if (typeof seconds === 'string' && seconds.trim().length > 0) {
+      const parsed = Number(seconds);
+      return Number.isFinite(parsed) ? parsed : undefined;
+    }
+  }
+  return undefined;
+};
 
 export default function HomePage() {
   return (
@@ -57,16 +144,6 @@ function HomePageContent() {
 
   // Filters (multi-select Option A)
   const [selections, setSelections] = useState<Selection[]>([]);
-  const includedTypes = useMemo(() => {
-    if (!selections.length) return [];   // let server default kick in
-    const all = selections.flatMap((sel) => {
-      const cat = CATEGORIES.find((c) => c.key === sel.parent);
-      const sub = cat?.subs.find((s) => s.key === sel.subKey) ?? cat?.subs[0];
-      return sub?.types ?? [];
-    });
-    return Array.from(new Set(all));
-  }, [selections]);
-
   const typeGroups = useMemo(() => {
     const map = new Map<string, Set<string>>();
     selections.forEach((sel) => {
@@ -84,6 +161,7 @@ function HomePageContent() {
 
   // Data + selection & hover
   const [places, setPlaces] = useState<PlaceItem[]>([]);
+  const [pinnedPlaces, setPinnedPlaces] = useState<Record<string, PlaceItem>>({});
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   // Open now toggle
@@ -124,6 +202,40 @@ function HomePageContent() {
     [places, openNowOnly]
   );
 
+  const pinnedList = useMemo(() => Object.values(pinnedPlaces), [pinnedPlaces]);
+  const pinnedIds = useMemo(() => new Set(pinnedList.map((p) => p.id)), [pinnedList]);
+  const combinedEntries = useMemo(() => {
+    const byId = new Map<string, { place: PlaceItem; isPinned: boolean }>();
+    pinnedList.forEach((place) => {
+      if (!place?.id) return;
+      byId.set(place.id, { place, isPinned: true });
+    });
+    filteredPlaces.forEach((place) => {
+      if (!place?.id) return;
+      const existing = byId.get(place.id);
+      const mergedPlace = existing ? { ...existing.place, ...place } : place;
+      byId.set(place.id, {
+        place: mergedPlace,
+        isPinned: existing?.isPinned ?? false,
+      });
+    });
+    const order: string[] = [];
+    pinnedList.forEach((place) => {
+      if (place?.id && !order.includes(place.id)) {
+        order.push(place.id);
+      }
+    });
+    filteredPlaces.forEach((place) => {
+      if (place?.id && !order.includes(place.id)) {
+        order.push(place.id);
+      }
+    });
+    return order
+      .map((id) => byId.get(id))
+      .filter((entry): entry is { place: PlaceItem; isPinned: boolean } => Boolean(entry));
+  }, [pinnedList, filteredPlaces]);
+  const displayPlaces = useMemo(() => combinedEntries.map((entry) => entry.place), [combinedEntries]);
+
   useEffect(() => {
     if (!isMobile) return;
     const original = document.body.style.overflow;
@@ -141,6 +253,50 @@ function HomePageContent() {
       setHoverId(null);
     }
   }, [hoverId, filteredPlaces]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const raw = window.localStorage.getItem('nearby:pinned-places');
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return;
+      const next: Record<string, PlaceItem> = {};
+      (parsed as PlaceItem[]).forEach((item) => {
+        if (item?.id) next[item.id] = item;
+      });
+      if (Object.keys(next).length > 0) {
+        setPinnedPlaces(next);
+      }
+    } catch (err) {
+      console.error('Failed to load pinned places', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const serialized = JSON.stringify(Object.values(pinnedPlaces));
+      window.localStorage.setItem('nearby:pinned-places', serialized);
+    } catch (err) {
+      console.error('Failed to persist pinned places', err);
+    }
+  }, [pinnedPlaces]);
+
+  useEffect(() => {
+    if (!places.length) return;
+    setPinnedPlaces((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      places.forEach((place) => {
+        if (next[place.id] && next[place.id] !== place) {
+          next[place.id] = place;
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [places]);
 
   const handleCopyLink = async () => {
     if (!haveOrigin) return;
@@ -163,6 +319,25 @@ function HomePageContent() {
     }
   };
 
+  const handleTogglePin = useCallback((place: PlaceItem) => {
+    if (!place?.id) return;
+    let removed = false;
+    setPinnedPlaces((prev) => {
+      const next = { ...prev };
+      if (next[place.id]) {
+        delete next[place.id];
+        removed = true;
+      } else {
+        next[place.id] = place;
+      }
+      return next;
+    });
+    if (removed) {
+      setSelectedId((prev) => (prev === place.id ? null : prev));
+      setHoverId((prev) => (prev === place.id ? null : prev));
+    }
+  }, []);
+
   // Open now toggle
   // UI state
   const [loading, setLoading] = useState(false);
@@ -171,19 +346,20 @@ function HomePageContent() {
   // Map markers
   const markers = useMemo(
     () =>
-      filteredPlaces.map((p) => ({
-        id: p.id,
-        position: p.location,
-        name: p.name,
-        label: p.name,
-        address: p.address,
-        googleMapsUri: p.googleMapsUri,
-        websiteUri: p.websiteUri,
-        openNow: p.openNow,
-        weekdayText: p.currentOpeningHours?.weekdayDescriptions ?? [],
-        primaryType: p.primaryType,
+      combinedEntries.map(({ place, isPinned }) => ({
+        id: place.id,
+        position: place.location,
+        name: place.name,
+        label: place.name,
+        address: place.address,
+        googleMapsUri: place.googleMapsUri,
+        websiteUri: place.websiteUri,
+        openNow: place.openNow,
+        weekdayText: place.currentOpeningHours?.weekdayDescriptions ?? [],
+        primaryType: place.primaryType,
+        isPinned,
       })),
-    [filteredPlaces]
+    [combinedEntries]
   );
 
   useEffect(() => {
@@ -231,7 +407,7 @@ function HomePageContent() {
           });
         }
 
-        let items: PlaceItem[] = Array.from(aggregated.values());
+        const items: PlaceItem[] = Array.from(aggregated.values());
 
         // 2) Route Matrix for top N (travel time + distance)
         const candidateMap = new Map<string, PlaceItem>();
@@ -271,32 +447,33 @@ function HomePageContent() {
           if (res2.ok) {
             // API route may return NDJSON-aggregated array or {elements}
             const bodyText = await res2.text();
-            const elements =
-              bodyText.trim().startsWith('{') || bodyText.trim().startsWith('[')
-                ? (JSON.parse(bodyText).elements ?? JSON.parse(bodyText))
-                : bodyText
-                    .split('\n')
-                    .filter(Boolean)
-                    .map((ln) => JSON.parse(ln));
+            const elements = parseRouteMatrixElements(bodyText);
 
-            elements?.forEach((el: any) => {
-              const idx = Number(el.destinationIndex);
-              if (!Number.isInteger(idx) || !targetItems[idx]) return;
+            elements.forEach((element) => {
+              const destinationIndex =
+                typeof element.destinationIndex === 'string'
+                  ? Number.parseInt(element.destinationIndex, 10)
+                  : element.destinationIndex;
 
-              const mode = typeof el.travelMode === 'string' ? el.travelMode.toUpperCase() : undefined;
-
-              // duration can be "523s" or { seconds: 523 }
-              let durSec: number | undefined;
-              if (typeof el.duration === 'string') {
-                const m = el.duration.match(/^(\d+(?:\.\d+)?)s$/);
-                if (m) durSec = Number(m[1]);
-              } else if (el.duration?.seconds != null) {
-                durSec = Number(el.duration.seconds);
+              if (
+                typeof destinationIndex !== 'number' ||
+                !Number.isInteger(destinationIndex) ||
+                !targetItems[destinationIndex]
+              ) {
+                return;
               }
 
-              const distanceMeters = typeof el.distanceMeters === 'number' ? el.distanceMeters : undefined;
+              const mode =
+                typeof element.travelMode === 'string'
+                  ? element.travelMode.toUpperCase()
+                  : undefined;
 
-              const target = targetItems[idx];
+              const durSec = parseDurationSeconds(element.duration);
+
+              const distanceMeters =
+                typeof element.distanceMeters === 'number' ? element.distanceMeters : undefined;
+
+              const target = targetItems[destinationIndex];
               if (mode === 'DRIVE') {
                 if (durSec != null) target.driveDurationSec = durSec;
                 if (distanceMeters != null) {
@@ -323,7 +500,6 @@ function HomePageContent() {
 
           } else {
             // Keep items without minutes; we’ll show distance-only message below
-            // eslint-disable-next-line no-console
             console.error('Route matrix request failed:', await res2.text());
           }
         }
@@ -347,8 +523,10 @@ function HomePageContent() {
         });
 
         setPlaces(items);
-      } catch (e: any) {
-        if (e.name !== 'AbortError') setError(e.message || 'Request failed');
+      } catch (err) {
+        if (err instanceof DOMException && err.name === 'AbortError') return;
+        const message = err instanceof Error ? err.message : 'Request failed';
+        setError(message);
       } finally {
         setLoading(false);
       }
@@ -375,12 +553,13 @@ function HomePageContent() {
               Discover nearby
             </span>
             <div className="mt-4 flex items-center justify-center gap-2">
-              <img
+              <Image
                 src="/images/logo.png"
                 alt="Nearby logo"
+                width={160}
+                height={64}
                 className="h-[2.5em] w-auto shrink-0 p-0 m-0"
-                loading="eager"
-                decoding="async"
+                priority
               />
               <h1 className="text-4xl sm:text-5xl font-semibold tracking-tight">Nearby</h1>
             </div>
@@ -408,28 +587,33 @@ function HomePageContent() {
     );
   }
 
-  const miles = radiusMeters / 1609.344;
-  const radiusLabel = `${Math.abs(miles - Math.round(miles)) < 1e-3 ? Math.round(miles) : miles.toFixed(1)} mi`;
   const addressLabel = selectedAddress || (haveOrigin ? 'Current map center' : 'Choose an address to begin');
   const hasSelections = selections.length > 0;
-  const placeCountLabel =
-    filteredPlaces.length > 0
-      ? `${filteredPlaces.length} ${filteredPlaces.length === 1 ? 'place' : 'places'}`
-      : hasSelections
-      ? 'No matches'
-      : '';
+  const resultsCount = filteredPlaces.length;
+  const pinnedCount = pinnedList.length;
+  let placeCountLabel = '';
+  if (resultsCount > 0 && pinnedCount > 0) {
+    placeCountLabel = `${resultsCount} ${resultsCount === 1 ? 'match' : 'matches'} • ${pinnedCount} pinned`;
+  } else if (resultsCount > 0) {
+    placeCountLabel = `${resultsCount} ${resultsCount === 1 ? 'place' : 'places'}`;
+  } else if (pinnedCount > 0) {
+    placeCountLabel = `${pinnedCount} pinned ${pinnedCount === 1 ? 'place' : 'places'}`;
+  } else if (hasSelections) {
+    placeCountLabel = 'No matches';
+  }
 
   return (
     <main className="flex h-screen flex-col bg-slate-100 text-slate-900 md:flex-row md:overflow-hidden">
       <div className="flex flex-col md:flex-1 md:overflow-hidden">
         <header className="sticky top-0 z-30 flex items-center gap-2 bg-[#1a73e8] px-3 py-2 text-white shadow-md md:absolute md:left-6 md:top-6 md:w-auto md:rounded-full md:bg-[#1a73e8]/90 md:px-5 md:py-2 md:shadow-lg md:backdrop-blur">
           <div className="flex items-center gap-1 text-sm font-semibold tracking-tight md:text-base">
-            <img
+            <Image
               src="/images/logo.png"
               alt="Nearby logo"
+              width={120}
+              height={48}
               className="h-5 w-auto md:h-6"
-              loading="eager"
-              decoding="async"
+              priority
             />
             <span>Nearby</span>
          </div>
@@ -598,19 +782,21 @@ function HomePageContent() {
         <div className="space-y-3 px-4 py-4 md:px-6 md:py-5">
           {loading && <div className="opacity-70">Searching nearby…</div>}
           {error && <div className="break-all text-red-600">{error}</div>}
-          {!loading && filteredPlaces.length === 0 && !error && (
+          {!loading && resultsCount === 0 && pinnedCount === 0 && !error && (
             <div className="text-sm opacity-70">
               {hasSelections
                 ? 'No places match your filters here. Try a larger radius or different categories.'
                 : 'Pick a category or adjust filters to explore nearby places.'}
             </div>
           )}
-          {filteredPlaces.length > 0 && (
+          {displayPlaces.length > 0 && (
             <ResultsList
-              items={filteredPlaces}
+              items={displayPlaces}
               selectedId={selectedId}
               onSelect={(id: string) => setSelectedId(id)}
               onHover={setHoverId}
+              pinnedIds={pinnedIds}
+              onTogglePin={handleTogglePin}
             />
           )}
         </div>

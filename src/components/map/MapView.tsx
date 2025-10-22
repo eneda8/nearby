@@ -15,6 +15,7 @@ type Marker = {
   openNow?: boolean;
   weekdayText?: string[];
   primaryType?: string;
+  isPinned?: boolean;
 };
 
 interface MapViewProps {
@@ -199,6 +200,7 @@ export default function MapView({
   );
 
   useEffect(() => {
+    if (mapRef.current) return;
     const loader = new Loader({
       apiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY!,
       version: 'weekly',
@@ -270,7 +272,7 @@ export default function MapView({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [center, panOffsetPixels, radiusMeters, showOrigin, showRadius]);
 
   useEffect(() => {
     if (!apiReady || !mapRef.current) return;
@@ -350,6 +352,9 @@ export default function MapView({
     const baseIcon = makeIcon('#f43f5e', 1.5);
     const hoverIcon = makeIcon('#2563eb', 1.7);
     const selectedIcon = makeIcon('#ef4444', 1.8);
+    const pinnedIcon = makeIcon('#f97316', 1.6);
+    const pinnedHoverIcon = makeIcon('#fb923c', 1.75);
+    const pinnedSelectedIcon = makeIcon('#ea580c', 1.9);
 
     for (const [id, meta] of markerRefs.current.entries()) {
       if (!markers.find((m) => m.id === id)) {
@@ -391,14 +396,15 @@ export default function MapView({
         }
       }
 
-      let icon = baseIcon;
-      let zIndex = 10;
+      let icon = marker.isPinned ? pinnedIcon : baseIcon;
+      let zIndex = marker.isPinned ? 20 : 10;
+
       if (selectedId === marker.id) {
-        icon = selectedIcon;
-        zIndex = 30;
+        icon = marker.isPinned ? pinnedSelectedIcon : selectedIcon;
+        zIndex = 35;
       } else if (hoverId === marker.id) {
-        icon = hoverIcon;
-        zIndex = 20;
+        icon = marker.isPinned ? pinnedHoverIcon : hoverIcon;
+        zIndex = marker.isPinned ? 30 : 20;
       }
 
       meta.marker.setIcon(icon);
@@ -408,7 +414,7 @@ export default function MapView({
     if (selectedId && !markerRefs.current.has(selectedId)) {
       infoWindowRef.current?.close();
     }
-  }, [apiReady, markers, onMarkerClick, hoverId, selectedId, openInfoWindow]);
+  }, [apiReady, markers, onMarkerClick, onMarkerHover, hoverId, selectedId, openInfoWindow]);
 
   useEffect(() => {
     if (!apiReady) return;
