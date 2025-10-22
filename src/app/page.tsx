@@ -16,6 +16,10 @@ const DEV_ORIGIN = process.env.NEXT_PUBLIC_DEV_ORIGIN
   ? process.env.NEXT_PUBLIC_DEV_ORIGIN.split(',').map(Number)
   : null;
 
+const DEFAULT_CENTER: { lat: number; lng: number } = DEV_ORIGIN
+  ? { lat: DEV_ORIGIN[0], lng: DEV_ORIGIN[1] }
+  : { lat: 40.7128, lng: -74.006 };
+
 type RouteMatrixElement = {
   destinationIndex?: number | string;
   travelMode?: string;
@@ -112,9 +116,7 @@ export default function HomePage() {
 
 function HomePageContent() {
   // Map origin/center (set after user picks an address)
-  const [center, setCenter] = useState<{lat:number;lng:number}>(
-  DEV_ORIGIN ? { lat: DEV_ORIGIN[0], lng: DEV_ORIGIN[1] } : { lat: 40.7128, lng: -74.006 }
-  );
+  const [center, setCenter] = useState<{ lat: number; lng: number }>(DEFAULT_CENTER);
   const [haveOrigin, setHaveOrigin] = useState<boolean>(!!DEV_ORIGIN);
   const [showLanding, setShowLanding] = useState<boolean>(!DEV_ORIGIN);
   const [selectedAddress, setSelectedAddress] = useState<string>('');
@@ -255,35 +257,6 @@ function HomePageContent() {
   }, [hoverId, filteredPlaces]);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    try {
-      const raw = window.localStorage.getItem('nearby:pinned-places');
-      if (!raw) return;
-      const parsed = JSON.parse(raw);
-      if (!Array.isArray(parsed)) return;
-      const next: Record<string, PlaceItem> = {};
-      (parsed as PlaceItem[]).forEach((item) => {
-        if (item?.id) next[item.id] = item;
-      });
-      if (Object.keys(next).length > 0) {
-        setPinnedPlaces(next);
-      }
-    } catch (err) {
-      console.error('Failed to load pinned places', err);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    try {
-      const serialized = JSON.stringify(Object.values(pinnedPlaces));
-      window.localStorage.setItem('nearby:pinned-places', serialized);
-    } catch (err) {
-      console.error('Failed to persist pinned places', err);
-    }
-  }, [pinnedPlaces]);
-
-  useEffect(() => {
     if (!places.length) return;
     setPinnedPlaces((prev) => {
       let changed = false;
@@ -335,6 +308,37 @@ function HomePageContent() {
     if (removed) {
       setSelectedId((prev) => (prev === place.id ? null : prev));
       setHoverId((prev) => (prev === place.id ? null : prev));
+    }
+  }, []);
+
+  const handleClearPins = useCallback(() => {
+    setPinnedPlaces({});
+    setSelectedId(null);
+    setHoverId(null);
+  }, []);
+
+  const handleResetHome = useCallback(() => {
+    setShowLanding(true);
+    setHaveOrigin(false);
+    setSelectedAddress('');
+    setSelectedId(null);
+    setHoverId(null);
+    setCopySuccess('idle');
+    setSelections([]);
+    setPlaces([]);
+    setPinnedPlaces({});
+    setCenter(DEFAULT_CENTER);
+    setRadiusMeters(1609.344);
+    setOpenNowOnly(true);
+    setError(null);
+    setLoading(false);
+    setShowMobileFilters(false);
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('lat');
+      url.searchParams.delete('lng');
+      url.searchParams.delete('address');
+      window.history.replaceState(null, '', url.toString());
     }
   }, []);
 
@@ -548,21 +552,28 @@ function HomePageContent() {
         }}
       >
         <div className="relative z-10 flex flex-col items-center justify-center min-h-screen px-4 text-center gap-4">
-          <div>
-            <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-[10px] uppercase tracking-[0.3em] text-white/70">
-              Discover nearby
-            </span>
-            <div className="mt-4 flex items-center justify-center gap-2">
-              <Image
-                src="/images/logo.png"
-                alt="Nearby logo"
-                width={160}
-                height={64}
-                className="h-[2.5em] w-auto shrink-0 p-0 m-0"
-                priority
-              />
-              <h1 className="text-4xl sm:text-5xl font-semibold tracking-tight">Nearby</h1>
-            </div>
+          <div className="flex flex-col items-center">
+            <button
+              type="button"
+              onClick={handleResetHome}
+              className="group flex flex-col items-center text-white focus:outline-none cursor-pointer"
+              aria-label="Back to Nearby home"
+            >
+              <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-[10px] uppercase tracking-[0.3em] text-white/70 transition group-hover:bg-white/20">
+                Discover nearby
+              </span>
+              <div className="mt-4 flex items-center justify-center gap-2">
+                <Image
+                  src="/images/logo.png"
+                  alt="Nearby logo"
+                  width={160}
+                  height={64}
+                  className="h-[2.5em] w-auto shrink-0 p-0 m-0"
+                  priority
+                />
+                <h1 className="text-4xl sm:text-5xl font-semibold tracking-tight">Nearby</h1>
+              </div>
+            </button>
             <p className="mt-2 max-w-md text-base text-white/80">
               Find great places around any address—restaurants, essentials, and more, all in one view.
             </p>
@@ -577,6 +588,7 @@ function HomePageContent() {
                 setShowLanding(false);
                 setSelectedAddress(place.formatted_address ?? place.name ?? '');
                 setSelectedId(null);
+                setPinnedPlaces({});
               }}
               showBranding={false}
             />
@@ -606,7 +618,12 @@ function HomePageContent() {
     <main className="flex h-screen flex-col bg-slate-100 text-slate-900 md:flex-row md:overflow-hidden">
       <div className="flex flex-col md:flex-1 md:overflow-hidden">
         <header className="sticky top-0 z-30 flex items-center gap-2 bg-[#1a73e8] px-3 py-2 text-white shadow-md md:absolute md:left-6 md:top-6 md:w-auto md:rounded-full md:bg-[#1a73e8]/90 md:px-5 md:py-2 md:shadow-lg md:backdrop-blur">
-          <div className="flex items-center gap-1 text-sm font-semibold tracking-tight md:text-base">
+          <button
+            type="button"
+            onClick={handleResetHome}
+            className="flex items-center gap-1 text-sm font-semibold tracking-tight md:text-base focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 rounded-full cursor-pointer"
+            aria-label="Back to Nearby home"
+          >
             <Image
               src="/images/logo.png"
               alt="Nearby logo"
@@ -616,7 +633,7 @@ function HomePageContent() {
               priority
             />
             <span>Nearby</span>
-         </div>
+          </button>
           <div className="ml-3 flex-1 md:hidden">
             <AddressInput
               placeholder="Search nearby"
@@ -627,6 +644,7 @@ function HomePageContent() {
                 setShowLanding(false);
                 setSelectedAddress(place.formatted_address ?? place.name ?? '');
                 setSelectedId(null);
+                setPinnedPlaces({});
               }}
               showBranding={false}
             />
@@ -644,7 +662,6 @@ function HomePageContent() {
               className="h-full w-full"
               showOrigin
               showRadius
-              panOffsetPixels={isMobile ? undefined : { x: 300, y: 0 }}
               hoverId={hoverId}
             />
             <div className="pointer-events-none absolute inset-0 hidden bg-gradient-to-r from-[#0b0f19]/25 via-transparent to-transparent md:block" />
@@ -666,8 +683,20 @@ function HomePageContent() {
                 </button>
               )}
             </div>
-            <div className="mt-1 flex items-center justify-between gap-2 text-xs text-slate-600">
-              {placeCountLabel && <span>{placeCountLabel}</span>}
+            {pinnedCount > 0 }
+            <div className="mt-1 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600">
+              <div className="flex items-center gap-2">
+                {placeCountLabel && <span>{placeCountLabel}</span>}
+                {pinnedCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleClearPins}
+                    className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-medium text-slate-700 shadow-sm"
+                  >
+                    Clear pins
+                  </button>
+                )}
+              </div>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
@@ -722,6 +751,7 @@ function HomePageContent() {
               setShowLanding(false);
               setSelectedAddress(place.formatted_address ?? place.name ?? '');
               setSelectedId(null);
+              setPinnedPlaces({});
             }}
           />
           <div className="mt-3 flex items-center gap-2 text-[11px] text-gray-600 md:hidden">
@@ -748,7 +778,18 @@ function HomePageContent() {
             )}
           </div>
           <div className="mt-2 flex flex-wrap items-center justify-between gap-3 text-xs text-gray-500">
-            {placeCountLabel && <span>{placeCountLabel}</span>}
+            <div className="flex items-center gap-2">
+              {placeCountLabel && <span>{placeCountLabel}</span>}
+              {pinnedCount > 0 && (
+                <button
+                  type="button"
+                  onClick={handleClearPins}
+                  className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-medium text-slate-700 shadow-sm"
+                >
+                  Clear pins
+                </button>
+              )}
+            </div>
             <div className="flex items-center gap-2">
               <button
                 type="button"

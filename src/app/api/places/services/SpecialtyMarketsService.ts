@@ -1,6 +1,7 @@
 import { fetchNearby, fetchTextQuery } from "../googlePlacesUtil";
 import type { GooglePlacesRaw } from "../types/apiTypes";
 import { haversineMeters } from "../lib/haversineMeters";
+import { extractPosition } from "../lib/requestResponseUtils";
 import {
   makeLocationRestriction,
   makeLocationBias,
@@ -82,22 +83,12 @@ export async function getSpecialtyMarketsPlaces(
     if (!place.id || seen.has(place.id)) return false;
     seen.add(place.id);
 
-    const latLng =
-      (place.location as { latLng?: { latitude?: number; longitude?: number } })
-        ?.latLng ?? place.location;
-    const position = {
-      lat: Number(
-        typeof latLng?.latitude === "number"
-          ? latLng.latitude
-          : (latLng as { lat?: number })?.lat ?? 0
-      ),
-      lng: Number(
-        typeof latLng?.longitude === "number"
-          ? latLng.longitude
-          : (latLng as { lng?: number })?.lng ?? 0
-      ),
-    };
-    const dist = haversineMeters({ lat, lng }, position);
+    const { lat: candidateLat, lng: candidateLng } = extractPosition(place.location);
+    if (typeof candidateLat !== "number" || typeof candidateLng !== "number") {
+      return false;
+    }
+
+    const dist = haversineMeters({ lat, lng }, { lat: candidateLat, lng: candidateLng });
     return dist <= radiusMeters;
   });
   return raw; // Add additional filtering if needed

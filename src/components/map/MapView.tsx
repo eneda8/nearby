@@ -28,7 +28,6 @@ interface MapViewProps {
   className?: string;
   showOrigin?: boolean;
   showRadius?: boolean;
-  panOffsetPixels?: { x: number; y: number };
   hoverId?: string | null;
 }
 
@@ -141,11 +140,6 @@ function setZoomForRadius(
   radiusMeters: number,
   marginRatio = 0.9
 ) {
-  if (!radiusMeters || radiusMeters <= 0) {
-    map.setCenter(center);
-    return;
-  }
-
   const div = map.getDiv() as HTMLElement;
   const w = div.clientWidth || 800;
   const h = div.clientHeight || 600;
@@ -171,7 +165,6 @@ export default function MapView({
   className,
   showOrigin = true,
   showRadius = true,
-  panOffsetPixels,
   hoverId,
 }: MapViewProps) {
   const mapDivRef = useRef<HTMLDivElement | null>(null);
@@ -181,6 +174,7 @@ export default function MapView({
   const markerRefs = useRef<Map<string, { marker: google.maps.Marker; data: Marker; listenersAttached?: boolean }>>(new Map());
   const infoWindowRef = useRef<google.maps.InfoWindow | null>(null);
   const [apiReady, setApiReady] = useState(false);
+  const previousViewRef = useRef<{ center: google.maps.LatLngLiteral; radius: number } | null>(null);
   const openInfoWindow = useCallback(
     (id: string) => {
       if (!mapRef.current) return;
@@ -229,10 +223,6 @@ export default function MapView({
 
       mapRef.current = map;
 
-      if (panOffsetPixels) {
-        map.panBy(panOffsetPixels.x, panOffsetPixels.y);
-      }
-
       if (showOrigin) {
         originRef.current = new google.maps.Marker({
           position: center,
@@ -265,23 +255,46 @@ export default function MapView({
         });
       }
 
-      setZoomForRadius(map, center, radiusMeters);
-      setApiReady(true);
-    });
+    setZoomForRadius(map, center, radiusMeters);
+    setApiReady(true);
+  });
 
     return () => {
       cancelled = true;
     };
-  }, [center, panOffsetPixels, radiusMeters, showOrigin, showRadius]);
+  }, [center, radiusMeters, showOrigin, showRadius]);
 
   useEffect(() => {
     if (!apiReady || !mapRef.current) return;
 
+    const map = mapRef.current;
+    const g = window.google;
+    const previous = previousViewRef.current;
+    const centerChanged =
+      !previous ||
+      previous.center.lat !== center.lat ||
+      previous.center.lng !== center.lng;
+    const radiusChanged = !previous || previous.radius !== radiusMeters;
+
+    if (radiusChanged || !previous) {
+      setZoomForRadius(map, center, radiusMeters);
+    }
+
+    if (centerChanged || !previous) {
+      if (g?.maps) {
+        map.panTo(center);
+      } else {
+        map.setCenter(center);
+      }
+    }
+
+    previousViewRef.current = { center, radius: radiusMeters };
+
     if (showOrigin) {
-      if (!originRef.current && mapRef.current) {
+      if (!originRef.current) {
         originRef.current = new google.maps.Marker({
           position: center,
-          map: mapRef.current,
+          map,
           title: 'Origin',
           clickable: false,
           zIndex: 9999,
@@ -295,7 +308,8 @@ export default function MapView({
           },
         });
       } else {
-        originRef.current?.setPosition(center);
+        originRef.current.setMap(map);
+        originRef.current.setPosition(center);
       }
     } else if (originRef.current) {
       originRef.current.setMap(null);
@@ -305,7 +319,7 @@ export default function MapView({
     if (showRadius && radiusMeters > 0) {
       if (!circleRef.current) {
         circleRef.current = new google.maps.Circle({
-          map: mapRef.current,
+          map,
           strokeColor: '#2563eb',
           strokeOpacity: 0.7,
           strokeWeight: 2,
@@ -316,7 +330,7 @@ export default function MapView({
           clickable: false,
         });
       } else {
-        circleRef.current.setMap(mapRef.current);
+        circleRef.current.setMap(map);
         circleRef.current.setCenter(center);
         circleRef.current.setRadius(radiusMeters);
       }
@@ -324,7 +338,7 @@ export default function MapView({
       circleRef.current.setMap(null);
       circleRef.current = null;
     }
-  }, [apiReady, center, radiusMeters, showOrigin, showRadius, panOffsetPixels]);
+  }, [apiReady, center, radiusMeters, showOrigin, showRadius]);
 
   useEffect(() => {
     if (!apiReady || !mapRef.current) return;

@@ -52,13 +52,18 @@ export type PlaceResponseItem = {
 /**
  * Raw result from Google Places API (internal use).
  */
+export type PlaceLocation =
+  | {
+      latLng?: { latitude?: number; longitude?: number };
+    }
+  | { latitude?: number; longitude?: number }
+  | { lat?: number; lng?: number };
+
 export type GooglePlacesRaw = {
   id: string;
   displayName?: { text?: string } | string;
   formattedAddress?: string;
-  location?:
-    | { latLng?: { latitude?: number; longitude?: number } }
-    | { latitude?: number; longitude?: number };
+  location?: PlaceLocation;
   primaryType?: string;
   types?: string[];
   googleMapsUri?: string;

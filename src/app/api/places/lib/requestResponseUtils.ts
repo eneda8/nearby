@@ -5,6 +5,7 @@ import type {
   PlaceResponseItem,
   GooglePlacesRaw,
   PlaceOpeningHours,
+  PlaceLocation,
 } from "../types/apiTypes";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -30,6 +31,32 @@ export function validateRequestBody(body: unknown): PlacesApiRequest {
 }
 
 // Utility for mapping, sorting, and slicing places for response
+export const extractPosition = (location?: PlaceLocation) => {
+  if (location && "latLng" in location && location.latLng) {
+    const { latitude, longitude } = location.latLng;
+    return {
+      lat: typeof latitude === "number" ? latitude : undefined,
+      lng: typeof longitude === "number" ? longitude : undefined,
+    };
+  }
+
+  if (location && "latitude" in location) {
+    return {
+      lat: typeof location.latitude === "number" ? location.latitude : undefined,
+      lng: typeof location.longitude === "number" ? location.longitude : undefined,
+    };
+  }
+
+  if (location && "lat" in location) {
+    return {
+      lat: typeof location.lat === "number" ? location.lat : undefined,
+      lng: typeof location.lng === "number" ? location.lng : undefined,
+    };
+  }
+
+  return { lat: undefined, lng: undefined };
+};
+
 export function shapePlacesResponse(
   places: GooglePlacesRaw[],
   origin: { lat: number; lng: number },
@@ -37,20 +64,10 @@ export function shapePlacesResponse(
 ): PlaceResponseItem[] {
   return places
     .map((p: GooglePlacesRaw): PlaceResponseItem => {
-      const latLng =
-        (p.location as { latLng?: { latitude?: number; longitude?: number } })
-          ?.latLng ?? p.location;
+      const { lat, lng } = extractPosition(p.location);
       const position = {
-        lat: Number(
-          typeof latLng?.latitude === "number"
-            ? latLng.latitude
-            : (latLng as { lat?: number })?.lat ?? 0
-        ),
-        lng: Number(
-          typeof latLng?.longitude === "number"
-            ? latLng.longitude
-            : (latLng as { lng?: number })?.lng ?? 0
-        ),
+        lat: typeof lat === "number" ? lat : 0,
+        lng: typeof lng === "number" ? lng : 0,
       };
 
       const currentOpeningHours = p.currentOpeningHours as PlaceOpeningHours | undefined;
