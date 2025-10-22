@@ -3,11 +3,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { CATEGORIES, type CatKey } from '@/lib/categories';
 import { FaShoppingCart, FaUtensils, FaStore, FaStar, FaCog, FaHospital, FaBus, FaHotel, FaUniversity, FaChurch } from 'react-icons/fa';
+import type { IconType } from 'react-icons';
 
 export type Selection = { parent: CatKey; subKey: string };
 
 const MAIN_CATEGORIES = ['essentials', 'food_drink', 'shopping', 'things_to_do'];
-const ICONS: Record<string, any> = {
+const ICONS: Record<string, IconType> = {
   essentials: FaShoppingCart,
   food_drink: FaUtensils,
   shopping: FaStore,

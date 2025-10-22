@@ -1,5 +1,4 @@
 import { fetchNearby, fetchTextQuery } from "../googlePlacesUtil";
-import { FilterService } from "../FilterService";
 import type { GooglePlacesRaw } from "../types/apiTypes";
 import { haversineMeters } from "../lib/haversineMeters";
 import {
@@ -79,13 +78,24 @@ export async function getSpecialtyMarketsPlaces(
   // Merge and dedupe by id, filter by radius
   const all = [...typeResults, ...textResults];
   const seen = new Set<string>();
-  const raw = all.filter((p: GooglePlacesRaw) => {
-    if (!p.id || seen.has(p.id)) return false;
-    seen.add(p.id);
-    const ll = (p.location as any)?.latLng ?? p.location;
+  const raw = all.filter((place: GooglePlacesRaw) => {
+    if (!place.id || seen.has(place.id)) return false;
+    seen.add(place.id);
+
+    const latLng =
+      (place.location as { latLng?: { latitude?: number; longitude?: number } })
+        ?.latLng ?? place.location;
     const position = {
-      lat: Number(ll?.latitude ?? ll?.lat ?? 0),
-      lng: Number(ll?.longitude ?? ll?.lng ?? 0),
+      lat: Number(
+        typeof latLng?.latitude === "number"
+          ? latLng.latitude
+          : (latLng as { lat?: number })?.lat ?? 0
+      ),
+      lng: Number(
+        typeof latLng?.longitude === "number"
+          ? latLng.longitude
+          : (latLng as { lng?: number })?.lng ?? 0
+      ),
     };
     const dist = haversineMeters({ lat, lng }, position);
     return dist <= radiusMeters;

@@ -1,11 +1,20 @@
 // Utility for validating and extracting request parameters
+import { haversineMeters } from "./haversineMeters";
 import type {
   PlacesApiRequest,
   PlaceResponseItem,
   GooglePlacesRaw,
+  PlaceOpeningHours,
 } from "../types/apiTypes";
 
-export function validateRequestBody(body: any): PlacesApiRequest {
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null;
+
+export function validateRequestBody(body: unknown): PlacesApiRequest {
+  if (!isRecord(body)) {
+    throw new Error("Request body must be an object");
+  }
+
   const { lat, lng, radiusMeters, includedTypes } = body;
   if (
     typeof lat !== "number" ||
@@ -28,11 +37,24 @@ export function shapePlacesResponse(
 ): PlaceResponseItem[] {
   return places
     .map((p: GooglePlacesRaw): PlaceResponseItem => {
-      const ll = (p.location as any)?.latLng ?? p.location;
+      const latLng =
+        (p.location as { latLng?: { latitude?: number; longitude?: number } })
+          ?.latLng ?? p.location;
       const position = {
-        lat: Number(ll?.latitude ?? ll?.lat ?? 0),
-        lng: Number(ll?.longitude ?? ll?.lng ?? 0),
+        lat: Number(
+          typeof latLng?.latitude === "number"
+            ? latLng.latitude
+            : (latLng as { lat?: number })?.lat ?? 0
+        ),
+        lng: Number(
+          typeof latLng?.longitude === "number"
+            ? latLng.longitude
+            : (latLng as { lng?: number })?.lng ?? 0
+        ),
       };
+
+      const currentOpeningHours = p.currentOpeningHours as PlaceOpeningHours | undefined;
+
       return {
         id: p.id,
         name:
@@ -48,13 +70,10 @@ export function shapePlacesResponse(
         directDistanceMeters:
           p.directDistanceMeters !== undefined
             ? p.directDistanceMeters
-            : require("../lib/haversineMeters").haversineMeters(
-                origin,
-                position
-              ),
+            : haversineMeters(origin, position),
         rating: p.rating ?? undefined,
         openNow: p.currentOpeningHours?.openNow ?? undefined,
-        currentOpeningHours: p.currentOpeningHours,
+        currentOpeningHours,
       };
     })
     .sort(

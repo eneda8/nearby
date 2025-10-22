@@ -7,19 +7,89 @@ export const runtime = 'nodejs';
 type TravelMode = 'WALK' | 'BICYCLE' | 'DRIVE';
 const DEFAULT_MODES: TravelMode[] = ['DRIVE', 'WALK'];
 
-function parseRouteMatrixBody(text: string): any[] {
+type LatLng = { lat: number; lng: number };
+
+type RouteMatrixElement = {
+  originIndex?: number;
+  destinationIndex?: number;
+  duration?: string | { seconds?: number | string };
+  distanceMeters?: number;
+  status?: { code?: number; message?: string };
+  condition?: string;
+  travelMode?: TravelMode;
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null;
+
+const isRouteMatrixElement = (value: unknown): value is RouteMatrixElement => {
+  if (!isRecord(value)) return false;
+  const { originIndex, destinationIndex, duration, distanceMeters, status, condition, travelMode } = value;
+
+  const numericIndexValid =
+    originIndex === undefined ||
+    typeof originIndex === 'number' ||
+    typeof originIndex === 'string';
+
+  const destinationIndexValid =
+    destinationIndex === undefined ||
+    typeof destinationIndex === 'number' ||
+    typeof destinationIndex === 'string';
+
+  const durationValid =
+    duration === undefined ||
+    typeof duration === 'string' ||
+    (isRecord(duration) &&
+      (typeof duration.seconds === 'number' ||
+        typeof duration.seconds === 'string' ||
+        duration.seconds === undefined));
+
+  const distanceValid = distanceMeters === undefined || typeof distanceMeters === 'number';
+  const statusValid = status === undefined || isRecord(status);
+  const conditionValid = condition === undefined || typeof condition === 'string';
+  const modeValid = travelMode === undefined || ['DRIVE', 'WALK', 'BICYCLE'].includes(String(travelMode));
+
+  return (
+    numericIndexValid &&
+    destinationIndexValid &&
+    durationValid &&
+    distanceValid &&
+    statusValid &&
+    conditionValid &&
+    modeValid
+  );
+};
+
+const safeJsonParse = (input: string): unknown => {
+  try {
+    return JSON.parse(input);
+  } catch {
+    return null;
+  }
+};
+
+function parseRouteMatrixBody(text: string): RouteMatrixElement[] {
   const trimmed = text.trim();
   if (!trimmed) return [];
-  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
-    const parsed = JSON.parse(trimmed);
-    return Array.isArray(parsed) ? parsed : parsed.elements ?? [];
+
+  const parsedValue = trimmed.startsWith('{') || trimmed.startsWith('[')
+    ? safeJsonParse(trimmed)
+    : trimmed
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0)
+        .map((line) => (line.startsWith('data:') ? line.slice(5).trim() : line))
+        .map((line) => safeJsonParse(line));
+
+  if (Array.isArray(parsedValue)) {
+    return parsedValue.filter(isRouteMatrixElement);
   }
-  return trimmed
-    .split('\n')
-    .map((ln) => ln.trim())
-    .filter((ln) => ln.length > 0)
-    .map((ln) => (ln.startsWith('data:') ? ln.slice(5).trim() : ln))
-    .map((ln) => JSON.parse(ln));
+
+  if (isRecord(parsedValue) && Array.isArray(parsedValue.elements)) {
+    return parsedValue.elements.filter(isRouteMatrixElement);
+  }
+
+  return [];
 }
 
 export async function POST(req: NextRequest) {
@@ -29,7 +99,18 @@ export async function POST(req: NextRequest) {
     }
 
     const { origin, destinations, travelMode, travelModes } = await req.json();
-    if (!origin || !Array.isArray(destinations) || destinations.length === 0) {
+
+    if (
+      !isRecord(origin) ||
+      typeof origin.lat !== 'number' ||
+      typeof origin.lng !== 'number' ||
+      !Array.isArray(destinations) ||
+      destinations.length === 0 ||
+      !destinations.every(
+        (value): value is LatLng =>
+          isRecord(value) && typeof value.lat === 'number' && typeof value.lng === 'number'
+      )
+    ) {
       return NextResponse.json({ error: 'origin and destinations required' }, { status: 400 });
     }
 
@@ -53,12 +134,19 @@ export async function POST(req: NextRequest) {
       origins: [
         { waypoint: { location: { latLng: { latitude: origin.lat, longitude: origin.lng } } } },
       ],
-      destinations: destinations.map((d: any) => ({
-        waypoint: { location: { latLng: { latitude: d.lat, longitude: d.lng } } },
+      destinations: destinations.map((destination) => ({
+        waypoint: {
+          location: {
+            latLng: {
+              latitude: destination.lat,
+              longitude: destination.lng,
+            },
+          },
+        },
       })),
     };
 
-    const allElements: any[] = [];
+    const allElements: RouteMatrixElement[] = [];
 
     for (const mode of modesToFetch) {
       const { ok, status, text } = await postJson('https://routes.googleapis.com/distanceMatrix/v2:computeRouteMatrix', {
@@ -82,9 +170,13 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({ elements: allElements });
-  } catch (err: any) {
+  } catch (err) {
     return NextResponse.json(
-      { error: 'Server error', details: String(err?.message || err) },
+      {
+        error: 'Server error',
+        details:
+          err instanceof Error ? err.message : typeof err === 'string' ? err : 'Unknown error',
+      },
       { status: 500 }
     );
   }

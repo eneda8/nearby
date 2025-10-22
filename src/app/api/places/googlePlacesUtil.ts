@@ -1,4 +1,3 @@
-import type { GooglePlacesRaw } from "./types/apiTypes";
 import https from "node:https";
 import { URL } from "node:url";
 
@@ -17,8 +16,8 @@ const FIELD_MASK = [
 ].join(",");
 
 export interface IGooglePlacesApi {
-  fetchNearby(body: object): Promise<Response>;
-  fetchTextQuery(body: object): Promise<Response>;
+  fetchNearby(body: Record<string, unknown>): Promise<Response>;
+  fetchTextQuery(body: Record<string, unknown>): Promise<Response>;
 }
 
 export class GooglePlacesApi implements IGooglePlacesApi {
@@ -30,15 +29,15 @@ export class GooglePlacesApi implements IGooglePlacesApi {
     this.fieldMask = fieldMask;
   }
 
-  async fetchNearby(body: object): Promise<Response> {
+  async fetchNearby(body: Record<string, unknown>): Promise<Response> {
     return this.postJson("https://places.googleapis.com/v1/places:searchNearby", body);
   }
 
-  async fetchTextQuery(body: object): Promise<Response> {
+  async fetchTextQuery(body: Record<string, unknown>): Promise<Response> {
     return this.postJson("https://places.googleapis.com/v1/places:searchText", body);
   }
 
-  private async postJson(url: string, body: object): Promise<Response> {
+  private async postJson(url: string, body: Record<string, unknown>): Promise<Response> {
     const payload = JSON.stringify(body);
     const endpoint = new URL(url);
 
@@ -61,10 +60,19 @@ export class GooglePlacesApi implements IGooglePlacesApi {
           res.on("end", () => {
             const buffer = Buffer.concat(chunks);
             const text = buffer.toString("utf8");
+            const responseHeaders = new Headers();
+            Object.entries(res.headers).forEach(([key, value]) => {
+              if (value === undefined) return;
+              if (Array.isArray(value)) {
+                value.forEach((entry) => responseHeaders.append(key, entry));
+              } else {
+                responseHeaders.append(key, value);
+              }
+            });
             resolve(
               new Response(text, {
                 status: res.statusCode ?? 500,
-                headers: res.headers as any,
+                headers: responseHeaders,
               })
             );
           });

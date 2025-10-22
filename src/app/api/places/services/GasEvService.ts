@@ -2,7 +2,6 @@ import { fetchNearby, fetchTextQuery } from "../googlePlacesUtil";
 import { FilterService } from "../FilterService";
 import { GAS_BRANDS } from "../brands";
 import type { GooglePlacesRaw } from "../types/apiTypes";
-import { haversineMeters } from "../lib/haversineMeters";
 import {
   makeLocationRestriction,
   makeLocationBias,

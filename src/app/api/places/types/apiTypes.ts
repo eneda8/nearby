@@ -14,6 +14,23 @@ export type PlacesApiResponse = {
   places: PlaceResponseItem[];
 };
 
+export type PlaceOpeningTime = {
+  day?: number;
+  hour?: number;
+  minute?: number;
+};
+
+export type PlaceOpeningPeriod = {
+  open?: PlaceOpeningTime;
+  close?: PlaceOpeningTime;
+};
+
+export type PlaceOpeningHours = {
+  openNow?: boolean;
+  periods?: PlaceOpeningPeriod[];
+  weekdayDescriptions?: string[];
+};
+
 /**
  * Represents a single place result returned to the client.
  */
@@ -29,11 +46,7 @@ export type PlaceResponseItem = {
   directDistanceMeters: number | null;
   rating?: number; // Star rating (0-5)
   openNow?: boolean; // Is the place open now?
-  currentOpeningHours?: {
-    openNow?: boolean;
-    periods?: any[];
-    weekdayDescriptions?: string[];
-  };
+  currentOpeningHours?: PlaceOpeningHours;
 };
 
 /**
@@ -53,9 +66,5 @@ export type GooglePlacesRaw = {
   directDistanceMeters?: number;
   rating?: number; // Star rating (0-5)
   openNow?: boolean; // Is the place open now?
-  currentOpeningHours?: {
-    openNow?: boolean;
-    periods?: any[];
-    weekdayDescriptions?: string[];
-  };
+  currentOpeningHours?: PlaceOpeningHours;
 };

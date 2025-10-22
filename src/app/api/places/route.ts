@@ -13,18 +13,8 @@ import { logCategory } from "./lib/logCategory";
  */
 import { NextRequest, NextResponse } from "next/server";
 
-import {
-  CHAIN_DENY,
-  PHARMACY_DENY,
-  GAS_DENY,
-  BANK_DENY,
-  CLOTHING_CHAIN_DENY,
-  JEWELRY_CHAIN_DENY,
-} from "./RegularExpressions";
-import { FilterService } from "./FilterService";
-import { fetchNearby, fetchTextQuery } from "./googlePlacesUtil";
+import { fetchNearby } from "./googlePlacesUtil";
 import { makeLocationRestriction } from "./lib/locationUtils";
-import { OFFICE_SUPLY_BRANDS } from "./brands";
 import { getGroceriesPlaces } from "./services/GroceriesService";
 import { getPharmacyPlaces } from "./services/PharmacyService";
 import { getGasEvPlaces } from "./services/GasEvService";
@@ -32,7 +22,6 @@ import { getBankAtmPlaces } from "./services/BankAtmService";
 import { getClothingPlaces } from "./services/ClothingService";
 import { getJewelryPlaces } from "./services/JewelryService";
 import { getSpecialtyMarketsPlaces } from "./services/SpecialtyMarketsService";
-import { haversineMeters } from "./lib/haversineMeters";
 import {
   validateRequestBody,
   shapePlacesResponse,
@@ -48,12 +37,6 @@ import type {
 const API_KEY = process.env.GOOGLE_MAPS_API_KEY_SERVER;
 
 // Straight-line distance (meters) for pre-sorting
-
-import {
-  NON_ASCII,
-  CONVENIENCE_WORDS,
-  SPECIALTY_CUES,
-} from "./RegularExpressions";
 
 // Deprecated: use GooglePlacesRaw and PlaceResponseItem from apiTypes.ts
 export type PlacesNewPlace = GooglePlacesRaw;
@@ -78,15 +61,17 @@ export async function POST(req: NextRequest) {
     try {
       const reqBody: PlacesApiRequest = validateRequestBody(await req.json());
       ({ lat, lng, radiusMeters, includedTypes } = reqBody);
-    } catch (err: any) {
-      return NextResponse.json({ error: err.message }, { status: 400 });
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Invalid request payload";
+      return NextResponse.json({ error: message }, { status: 400 });
     }
 
     // --- Category resolution ---
     const mode = inferMode(includedTypes);
     let category = "";
-    let runPrintShip = includedTypes.includes("post_office");
-    let otherTypes = includedTypes.filter((t: string) => t !== "post_office");
+    const runPrintShip = includedTypes.includes("post_office");
+    const otherTypes = includedTypes.filter((t: string) => t !== "post_office");
     if (runPrintShip && otherTypes.length === 0) {
       category = "print_ship_only";
     } else if (runPrintShip && otherTypes.length > 0) {
@@ -218,9 +203,13 @@ export async function POST(req: NextRequest) {
 
     // Map to client shape + pre-rank by straight-line distance
     // ...existing code...
-  } catch (err: any) {
+  } catch (err) {
     return NextResponse.json(
-      { error: "Server error", details: String(err?.message || err) },
+      {
+        error: "Server error",
+        details:
+          err instanceof Error ? err.message : typeof err === "string" ? err : "Unknown error",
+      },
       { status: 500 }
     );
   }

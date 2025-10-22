@@ -3,17 +3,17 @@
 import type { GooglePlacesRaw } from "../types/apiTypes";
 
 export function logCategory(label: string, places: GooglePlacesRaw[]) {
-  // For production, consider using a robust logger like 'winston' or 'pino'.
-  // This is a simple console logger for development/debugging.
-  // console.log(
-  //   label,
-  //   places.length,
-  //   places
-  //     .slice(0, 3)
-  //     .map((p: GooglePlacesRaw) =>
-  //       typeof p.displayName === "string"
-  //         ? p.displayName
-  //         : p.displayName?.text || ""
-  //     )
-  // );
+  if (process.env.NODE_ENV === "production") return;
+  const preview = places
+    .slice(0, 3)
+    .map((place) =>
+      typeof place.displayName === "string"
+        ? place.displayName
+        : place.displayName?.text ?? ""
+    )
+    .filter(Boolean);
+  console.debug(`[places] ${label}`, {
+    total: places.length,
+    preview,
+  });
 }
