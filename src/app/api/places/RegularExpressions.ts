@@ -395,3 +395,22 @@ export const PRINT_SHIP_DENY = new RegExp(
   ].join("|"),
   "i"
 );
+
+export const SPECIALTY_MARKETS_DENY = new RegExp(
+  [
+    "market\\s*basket",
+    "whole\\s*foods",
+    "trader\\s*joe'?s",
+    "walmart",
+    "target",
+    "7\\s*-?\\s*eleven",
+    "dunkin'?",
+    "starbucks",
+    "cvs",
+    "walgreens",
+    "stop\\s*&?\\s*shop",
+    "shaw'?s",
+    "ben\\s*&?\\s*jerry'?s",
+  ].join("|"),
+  "i"
+);

@@ -1,4 +1,5 @@
 import { fetchNearby, fetchTextQuery } from "../googlePlacesUtil";
+import { FilterService } from "../FilterService";
 import type { GooglePlacesRaw } from "../types/apiTypes";
 import { haversineMeters } from "../lib/haversineMeters";
 import { extractPosition } from "../lib/requestResponseUtils";
@@ -79,7 +80,7 @@ export async function getSpecialtyMarketsPlaces(
   // Merge and dedupe by id, filter by radius
   const all = [...typeResults, ...textResults];
   const seen = new Set<string>();
-  const raw = all.filter((place: GooglePlacesRaw) => {
+  const deduped = all.filter((place: GooglePlacesRaw) => {
     if (!place.id || seen.has(place.id)) return false;
     seen.add(place.id);
 
@@ -91,5 +92,7 @@ export async function getSpecialtyMarketsPlaces(
     const dist = haversineMeters({ lat, lng }, { lat: candidateLat, lng: candidateLng });
     return dist <= radiusMeters;
   });
-  return raw; // Add additional filtering if needed
+
+  // Filter out chains, cafes, and low-rated places
+  return FilterService.filterSpecialtyMarkets(deduped);
 }
