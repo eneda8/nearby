@@ -1,9 +1,7 @@
 // Centralized brands constants for use in route.ts
-export const OFFICE_SUPLY_BRANDS = [
-  "The UPS Store",
-  "FedEx",
-  "OfficeDepot",
-  "OfficeMax",
+export const PACK_SHIP_BRANDS = [
+  "UPS Store",
+  "FedEx Office",
   "Staples",
 ];
 

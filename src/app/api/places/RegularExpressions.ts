@@ -385,3 +385,13 @@ export const JEWELRY_CHAIN_DENY = new RegExp(
   ].join("|"),
   "i"
 );
+
+export const PRINT_SHIP_DENY = new RegExp(
+  [
+    "access\\s*point",
+    "drop\\s*box",
+    "locker",
+    "amazon\\s*hub",
+  ].join("|"),
+  "i"
+);

@@ -6,6 +6,7 @@ import {
   BANK_DENY,
   CLOTHING_CHAIN_DENY,
   JEWELRY_CHAIN_DENY,
+  PRINT_SHIP_DENY,
   CONVENIENCE_WORDS,
   SPECIALTY_CUES,
   NON_ASCII,
@@ -82,5 +83,13 @@ export class FilterService {
     });
   }
 
-  // Add more filter methods as needed for other categories
+  static filterPrintShip(raw: PlacesNewPlace[]): PlacesNewPlace[] {
+    return raw.filter((p: PlacesNewPlace) => {
+      const name =
+        typeof p.displayName === "string"
+          ? p.displayName
+          : p.displayName?.text || "";
+      return !PRINT_SHIP_DENY.test(name);
+    });
+  }
 }

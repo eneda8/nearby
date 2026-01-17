@@ -22,6 +22,7 @@ import { getBankAtmPlaces } from "./services/BankAtmService";
 import { getClothingPlaces } from "./services/ClothingService";
 import { getJewelryPlaces } from "./services/JewelryService";
 import { getSpecialtyMarketsPlaces } from "./services/SpecialtyMarketsService";
+import { getPrintShipPlaces } from "./services/PrintShipService";
 import {
   validateRequestBody,
   shapePlacesResponse,
@@ -70,12 +71,12 @@ export async function POST(req: NextRequest) {
     // --- Category resolution ---
     const mode = inferMode(includedTypes);
     let category = "";
-    const runPrintShip = includedTypes.includes("post_office");
+    const runPackShip = includedTypes.includes("post_office");
     const otherTypes = includedTypes.filter((t: string) => t !== "post_office");
-    if (runPrintShip && otherTypes.length === 0) {
-      category = "print_ship_only";
-    } else if (runPrintShip && otherTypes.length > 0) {
-      category = "print_ship_and_others";
+    if (runPackShip && otherTypes.length === 0) {
+      category = "pack_ship_only";
+    } else if (runPackShip && otherTypes.length > 0) {
+      category = "pack_ship_and_others";
     } else if (
       Array.isArray(includedTypes) &&
       includedTypes.length === 2 &&
@@ -124,6 +125,8 @@ export async function POST(req: NextRequest) {
     > = {
       groceries: async ({ lat, lng, radiusMeters }) =>
         getGroceriesPlaces(lat, lng, radiusMeters),
+      pack_ship_only: async ({ lat, lng, radiusMeters }) =>
+        getPrintShipPlaces(lat, lng, radiusMeters),
       specialty_markets: async ({ lat, lng, radiusMeters, includedTypes }) =>
         getSpecialtyMarketsPlaces(lat, lng, radiusMeters, includedTypes ?? []),
       pharmacy: async ({ lat, lng, radiusMeters }) =>

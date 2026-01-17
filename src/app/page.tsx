@@ -166,8 +166,8 @@ function HomePageContent() {
   const [pinnedPlaces, setPinnedPlaces] = useState<Record<string, PlaceItem>>({});
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  // Open now toggle
-  const [openNowOnly, setOpenNowOnly] = useState(true); // default to true
+  // Open now toggle - default OFF in development, ON in production
+  const [openNowOnly, setOpenNowOnly] = useState(process.env.NODE_ENV !== 'development');
   const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const selectedTokens = useMemo(() => {
