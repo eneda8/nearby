@@ -605,6 +605,11 @@ function HomePageContent() {
             <div className="my-1 text-[10px] text-gray-500 text-center">Powered by Google</div>
           </div>
         </div>
+        <div className="absolute bottom-6 left-0 right-0 text-center text-xs text-white/50">
+          <a href="/legal" className="hover:text-white/80 transition">
+            Privacy & Terms
+          </a>
+        </div>
       </main>
     );
   }
@@ -761,7 +766,8 @@ function HomePageContent() {
           </div>
         )}
       </div>
-      <section className="flex-1 overflow-y-auto bg-white md:max-w-xl md:border-l md:border-white/40 md:bg-white/95 md:backdrop-blur-md md:shadow-[0_35px_120px_-40px_rgba(15,23,42,0.75)]">
+      <section className="flex flex-1 flex-col bg-white md:max-w-xl md:border-l md:border-white/40 md:bg-white/95 md:backdrop-blur-md md:shadow-[0_35px_120px_-40px_rgba(15,23,42,0.75)]">
+        <div className="flex-1 overflow-y-auto">
         <div className="hidden border-b border-black/5 px-6 pt-5 pb-4 md:block">
           <AddressInput
             placeholder="Search nearby"
@@ -872,6 +878,12 @@ function HomePageContent() {
               onTogglePin={handleTogglePin}
             />
           )}
+        </div>
+        </div>
+        <div className="border-t border-slate-100 py-3 text-center text-[10px] text-slate-400">
+          <a href="/legal" className="hover:text-slate-600 transition">
+            Privacy & Terms
+          </a>
         </div>
       </section>
       {isMobile && (
