@@ -692,7 +692,7 @@ export class FilterService {
     ]);
 
     // Exclude entertainment restaurants that look like sports venues
-    const ENTERTAINMENT_DENY = /\b(dave\s*&?\s*buster|dave\s*and\s*buster|main\s*event|round\s*1|round\s*one|chuck\s*e\.?\s*cheese|topgolf)\b/i;
+    const ENTERTAINMENT_DENY = /\b(dave\s*&?\s*buster'?s?|dave\s*and\s*buster'?s?|main\s*event|round\s*1|round\s*one|chuck\s*e\.?\s*cheese'?s?|topgolf)\b/i;
 
     return raw.filter((p: PlacesNewPlace) => {
       // Global checks
