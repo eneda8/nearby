@@ -27,6 +27,8 @@ import { getBarPlaces } from "./services/BarService";
 import { getLiquorPlaces } from "./services/LiquorService";
 import { getWarehouseClubsPlaces } from "./services/WarehouseClubsService";
 import { getDiscountThriftPlaces } from "./services/DiscountThriftService";
+import { FilterService } from "./FilterService";
+import { getAttractionsPlaces } from "./services/AttractionsService";
 import {
   validateRequestBody,
   shapePlacesResponse,
@@ -118,6 +120,8 @@ export async function POST(req: NextRequest) {
       category = "warehouse_clubs";
     } else if (hasAnyType(includedTypes, ["discount_store", "thrift_store", "variety_store"])) {
       category = "discount_thrift";
+    } else if (hasAnyType(includedTypes, ["tourist_attraction", "museum", "historical_place"])) {
+      category = "attractions";
     } else {
       category = "default";
     }
@@ -179,6 +183,8 @@ export async function POST(req: NextRequest) {
         getWarehouseClubsPlaces(lat, lng, radiusMeters),
       discount_thrift: async ({ lat, lng, radiusMeters }) =>
         getDiscountThriftPlaces(lat, lng, radiusMeters),
+      attractions: async ({ lat, lng, radiusMeters }) =>
+        getAttractionsPlaces(lat, lng, radiusMeters),
       default: async ({ lat, lng, radiusMeters, includedTypes }) => {
         const nearbyBody = {
           includedTypes: includedTypes ?? [],
@@ -209,8 +215,8 @@ export async function POST(req: NextRequest) {
     logCategory(`[${category}] filtered:`, filtered);
 
     // --- Response shaping ---
-    // Preserve tier-based order for bar category (bars first, then pubs, then restaurant-bars)
-    const preserveOrder = category === "bar";
+    // Preserve tier-based order for categories with custom sorting
+    const preserveOrder = category === "bar" || category === "attractions";
     const placesShaped: PlaceResponseItem[] = shapePlacesResponse(
       filtered,
       { lat, lng },

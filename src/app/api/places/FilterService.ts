@@ -565,4 +565,68 @@ export class FilterService {
       return true;
     });
   }
+
+  static filterAttractions(raw: PlacesNewPlace[]): PlacesNewPlace[] {
+    // Valid attraction primaryTypes
+    const VALID_PRIMARY_TYPES = new Set([
+      "tourist_attraction",
+      "museum",
+      "historical_place",
+      "historical_landmark",
+      "monument",
+      "aquarium",
+      "zoo",
+    ]);
+
+    // Exclude these primaryTypes
+    const EXCLUDED_PRIMARY_TYPES = new Set([
+      "amusement_center",
+      "escape_room_center",
+      "park",
+      "playground",
+      "dog_park",
+      "sports_complex",
+      "athletic_field",
+      "golf_course",
+      "gym",
+      "fitness_center",
+    ]);
+
+    // Exclude these keywords in name (sports fields, parks, etc.)
+    const EXCLUDED_NAME_PATTERN = /\b(softball|baseball|soccer|football|field|playground|dog\s*park|skate\s*park|splash\s*pad)\b/i;
+
+    const filtered = raw.filter((p: PlacesNewPlace) => {
+      // Global checks
+      if (this.isClosed(p)) return false;
+      if (this.isLowQuality(p)) return false;
+
+      const name = this.getName(p);
+      const primaryType = (p.primaryType || "").toLowerCase();
+
+      // Exclude unwanted primaryTypes
+      if (EXCLUDED_PRIMARY_TYPES.has(primaryType)) return false;
+
+      // Exclude by name pattern (sports fields, etc.)
+      if (EXCLUDED_NAME_PATTERN.test(name)) return false;
+
+      // Only include if primaryType is a valid attraction type
+      if (!VALID_PRIMARY_TYPES.has(primaryType)) return false;
+
+      return true;
+    });
+
+    // Sort: tourist_attraction first, then museums, then historical places
+    return filtered.sort((a, b) => {
+      const ptA = (a.primaryType || "").toLowerCase();
+      const ptB = (b.primaryType || "").toLowerCase();
+
+      const getRank = (pt: string): number => {
+        if (pt === "tourist_attraction") return 0;
+        if (pt === "museum") return 1;
+        return 2;
+      };
+
+      return getRank(ptA) - getRank(ptB);
+    });
+  }
 }
