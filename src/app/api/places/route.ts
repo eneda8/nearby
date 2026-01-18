@@ -26,6 +26,7 @@ import { getPrintShipPlaces } from "./services/PrintShipService";
 import { getBarPlaces } from "./services/BarService";
 import { getLiquorPlaces } from "./services/LiquorService";
 import { getWarehouseClubsPlaces } from "./services/WarehouseClubsService";
+import { getDiscountThriftPlaces } from "./services/DiscountThriftService";
 import {
   validateRequestBody,
   shapePlacesResponse,
@@ -115,6 +116,8 @@ export async function POST(req: NextRequest) {
       category = "liquor";
     } else if (hasAnyType(includedTypes, ["warehouse_store", "wholesale_store"])) {
       category = "warehouse_clubs";
+    } else if (hasAnyType(includedTypes, ["discount_store", "thrift_store", "variety_store"])) {
+      category = "discount_thrift";
     } else {
       category = "default";
     }
@@ -174,6 +177,8 @@ export async function POST(req: NextRequest) {
         getLiquorPlaces(lat, lng, radiusMeters),
       warehouse_clubs: async ({ lat, lng, radiusMeters }) =>
         getWarehouseClubsPlaces(lat, lng, radiusMeters),
+      discount_thrift: async ({ lat, lng, radiusMeters }) =>
+        getDiscountThriftPlaces(lat, lng, radiusMeters),
       default: async ({ lat, lng, radiusMeters, includedTypes }) => {
         const nearbyBody = {
           includedTypes: includedTypes ?? [],
