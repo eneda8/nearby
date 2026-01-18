@@ -24,6 +24,7 @@ import { getJewelryPlaces } from "./services/JewelryService";
 import { getSpecialtyMarketsPlaces } from "./services/SpecialtyMarketsService";
 import { getPrintShipPlaces } from "./services/PrintShipService";
 import { getBarPlaces } from "./services/BarService";
+import { getLiquorPlaces } from "./services/LiquorService";
 import {
   validateRequestBody,
   shapePlacesResponse,
@@ -109,6 +110,8 @@ export async function POST(req: NextRequest) {
       hasAnyType(includedTypes, ["bar", "pub", "wine_bar", "cocktail_bar", "sports_bar"])
     ) {
       category = "bar";
+    } else if (hasAnyType(includedTypes, ["liquor_store"])) {
+      category = "liquor";
     } else {
       category = "default";
     }
@@ -164,6 +167,8 @@ export async function POST(req: NextRequest) {
       },
       bar: async ({ lat, lng, radiusMeters }) =>
         getBarPlaces(lat, lng, radiusMeters),
+      liquor: async ({ lat, lng, radiusMeters }) =>
+        getLiquorPlaces(lat, lng, radiusMeters),
       default: async ({ lat, lng, radiusMeters, includedTypes }) => {
         const nearbyBody = {
           includedTypes: includedTypes ?? [],

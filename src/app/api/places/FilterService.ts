@@ -284,4 +284,134 @@ export class FilterService {
       return distA - distB;
     });
   }
+
+  static filterLiquor(raw: PlacesNewPlace[]): PlacesNewPlace[] {
+    // States where convenience stores generally cannot sell liquor (control states
+    // and states with strict alcohol laws). In these states, exclude 7-Eleven etc.
+    const CONVENIENCE_RESTRICTED_STATES = new Set([
+      "MA", // Massachusetts - no alcohol at convenience stores
+      "PA", // Pennsylvania - state stores only
+      "UT", // Utah - state stores only
+      "NH", // New Hampshire - state stores only
+      "VA", // Virginia - ABC stores only
+      "NC", // North Carolina - ABC stores only
+      "AL", // Alabama - ABC stores only
+      "ID", // Idaho - state stores only
+      "OR", // Oregon - OLCC stores only
+      "VT", // Vermont - state/agency stores
+      "ME", // Maine - agency stores
+      "OH", // Ohio - state contract stores
+      "WV", // West Virginia - limited
+      "WY", // Wyoming - state stores
+      "MT", // Montana - state stores
+      "MS", // Mississippi - ABC stores
+      "IA", // Iowa - state stores
+      "MI", // Michigan - state stores for spirits
+      "CT", // Connecticut - no alcohol at convenience stores
+      "RI", // Rhode Island - package stores only
+      "NJ", // New Jersey - limited (no convenience stores)
+      "DE", // Delaware - package stores only
+      "MD", // Maryland - county-dependent, mostly restricted
+      "KY", // Kentucky - many dry counties
+      "TN", // Tennessee - wine in grocery, no spirits
+      "KS", // Kansas - 3.2% beer only at convenience stores
+      "OK", // Oklahoma - recent changes but still restricted
+      "CO", // Colorado - limited (recent changes)
+    ]);
+
+    const CONVENIENCE_STORE_PATTERN = /\b(7[-\s]?eleven|7[-\s]?11|circle\s*k|wawa|sheetz|quiktrip|speedway|am\s*pm|ampm|mini\s*mart|kwik|quick\s*stop|convenience)\b/i;
+
+    // Extract state abbreviation from address (expects "City, ST ZIP" or "City, State ZIP" format)
+    const getStateFromAddress = (address: string): string | null => {
+      // Match ", XX " or ", XX," where XX is a 2-letter state code before ZIP
+      const match = address.match(/,\s*([A-Z]{2})\s+\d{5}/);
+      return match ? match[1] : null;
+    };
+
+    return raw.filter((p: PlacesNewPlace) => {
+      const name =
+        typeof p.displayName === "string"
+          ? p.displayName
+          : p.displayName?.text || "";
+      const address = p.formattedAddress || "";
+      const primaryType = (p.primaryType || "").toLowerCase();
+      const types = (p.types || []).map((t: string) => t.toLowerCase());
+
+      // Exclude non-liquor businesses that might match text search
+      const NON_LIQUOR_TYPES = new Set([
+        "consultant",
+        "lawyer",
+        "attorney",
+        "accountant",
+        "real_estate_agency",
+        "insurance_agency",
+        "grocery_store",
+        "supermarket",
+        "asian_grocery_store",
+        "specialty_grocery_store",
+        "restaurant",
+        "bar",
+        "cafe",
+        "bakery",
+        "print_shop",
+        "pharmacy",
+        "drugstore",
+        "food",
+        "market",
+        "store",
+        "home_goods_store",
+        "furniture_store",
+        "clothing_store",
+        "department_store",
+        "gift_shop",
+        "pet_store",
+        "hardware_store",
+        "electronics_store",
+        "book_store",
+        "beauty_salon",
+        "hair_salon",
+        "spa",
+      ]);
+
+      const nameLower = name.toLowerCase();
+      const hasLiquorKeyword =
+        nameLower.includes("liquor") ||
+        nameLower.includes("wine") ||
+        nameLower.includes("spirits") ||
+        nameLower.includes("beverage") ||
+        nameLower.includes("package store") ||
+        nameLower.includes("bottle");
+
+      // If no primaryType or not a liquor store, require liquor keywords in name
+      if (!primaryType || primaryType === "") {
+        if (!hasLiquorKeyword) return false;
+      }
+
+      // Exclude if primaryType is clearly not a liquor store
+      if (NON_LIQUOR_TYPES.has(primaryType) && primaryType !== "liquor_store") {
+        if (!hasLiquorKeyword) return false;
+      }
+
+      // Exclude advisor/consultant/license businesses
+      if (/\b(advisor|consultant|license|licensing|attorney|lawyer)\b/i.test(nameLower)) {
+        return false;
+      }
+
+      // Check if this looks like a convenience store
+      const isConvenienceStore =
+        CONVENIENCE_STORE_PATTERN.test(name) ||
+        primaryType === "convenience_store" ||
+        types.includes("convenience_store");
+
+      if (isConvenienceStore) {
+        const state = getStateFromAddress(address);
+        // Exclude if in a state where convenience stores can't sell liquor
+        if (state && CONVENIENCE_RESTRICTED_STATES.has(state)) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }
 }

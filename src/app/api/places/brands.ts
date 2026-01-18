@@ -80,6 +80,32 @@ export const GAS_BRANDS = [
   "EV Charging",
 ];
 
+export const LIQUOR_BRANDS = [
+  // State-run stores
+  "NH State Liquor",
+  "ABC Store", // Virginia, North Carolina, Alabama
+  "Fine Wine & Good Spirits", // Pennsylvania
+  "OLCC Liquor", // Oregon
+  // National/regional chains
+  "Total Wine",
+  "BevMo",
+  "Spec's",
+  "Twin Liquors",
+  "Binny's",
+  "ABC Fine Wine & Spirits",
+  "Lee's Discount Liquor",
+  "Frugal MacDoogal",
+  "Bottle King",
+  "Gordon's Fine Wines & Liquors",
+  "Kappy's",
+  "Gary's Wine",
+  "Goody Goody",
+  "Argonaut Wine & Liquor",
+  "Daveco Liquors",
+  "Lukas Liquor",
+  "liquor store",
+];
+
 export const BANK_BRANDS = [
   "Chase",
   "Bank of America",
