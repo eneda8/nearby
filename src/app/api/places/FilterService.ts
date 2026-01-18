@@ -18,12 +18,51 @@ import { extractPosition } from "./lib/requestResponseUtils";
 import type { PlacesNewPlace } from "./route";
 
 export class FilterService {
+  // --- Global Helper Methods ---
+
+  /**
+   * Check if a place is closed (temporarily or permanently)
+   */
+  static isClosed(p: PlacesNewPlace): boolean {
+    const businessStatus = ((p as { businessStatus?: string }).businessStatus || "").toUpperCase();
+    return businessStatus === "CLOSED_TEMPORARILY" || businessStatus === "CLOSED_PERMANENTLY";
+  }
+
+  /**
+   * Check if a place is low quality (low rating with few reviews, or no reviews at all)
+   * This helps filter fake/new/sketchy businesses
+   */
+  static isLowQuality(p: PlacesNewPlace): boolean {
+    const rating = p.rating ?? 5; // default high if no rating
+    const userRatingCount = (p as { userRatingCount?: number }).userRatingCount ?? 100;
+
+    // No reviews at all = can't verify quality
+    if (userRatingCount === 0) return true;
+
+    // Low rating with few reviews = likely sketchy
+    if (rating < 3.5 && userRatingCount < 5) return true;
+
+    return false;
+  }
+
+  /**
+   * Extract display name from place object
+   */
+  static getName(p: PlacesNewPlace): string {
+    return typeof p.displayName === "string"
+      ? p.displayName
+      : p.displayName?.text || "";
+  }
+
+  // --- Category Filter Methods ---
+
   static filterGroceries(raw: PlacesNewPlace[]): PlacesNewPlace[] {
     return raw.filter((p: PlacesNewPlace) => {
-      const name =
-        typeof p.displayName === "string"
-          ? p.displayName
-          : p.displayName?.text || "";
+      // Global checks
+      if (this.isClosed(p)) return false;
+      if (this.isLowQuality(p)) return false;
+
+      const name = this.getName(p);
       const pt = (p.primaryType || "").toLowerCase();
       if (pt !== "grocery_store" && pt !== "supermarket") return false;
       if (CONVENIENCE_WORDS.test(name)) return false;
@@ -39,30 +78,33 @@ export class FilterService {
 
   static filterPharmacy(raw: PlacesNewPlace[]): PlacesNewPlace[] {
     return raw.filter((p: PlacesNewPlace) => {
-      const name =
-        typeof p.displayName === "string"
-          ? p.displayName
-          : p.displayName?.text || "";
+      // Global checks
+      if (this.isClosed(p)) return false;
+      if (this.isLowQuality(p)) return false;
+
+      const name = this.getName(p);
       return !PHARMACY_DENY.test(name);
     });
   }
 
   static filterGasEv(raw: PlacesNewPlace[]): PlacesNewPlace[] {
     return raw.filter((p: PlacesNewPlace) => {
-      const name =
-        typeof p.displayName === "string"
-          ? p.displayName
-          : p.displayName?.text || "";
+      // Global checks
+      if (this.isClosed(p)) return false;
+      if (this.isLowQuality(p)) return false;
+
+      const name = this.getName(p);
       return !GAS_DENY.test(name);
     });
   }
 
   static filterBankAtm(raw: PlacesNewPlace[]): PlacesNewPlace[] {
     return raw.filter((p: PlacesNewPlace) => {
-      const name =
-        typeof p.displayName === "string"
-          ? p.displayName
-          : p.displayName?.text || "";
+      // Global checks
+      if (this.isClosed(p)) return false;
+      if (this.isLowQuality(p)) return false;
+
+      const name = this.getName(p);
       return !BANK_DENY.test(name);
     });
   }
@@ -119,37 +161,24 @@ export class FilterService {
     };
 
     return raw.filter((p: PlacesNewPlace) => {
-      const name =
-        typeof p.displayName === "string"
-          ? p.displayName
-          : p.displayName?.text || "";
-      const nameLower = name.toLowerCase();
+      // Global checks
+      if (this.isClosed(p)) return false;
+      if (this.isLowQuality(p)) return false;
+
+      const name = this.getName(p);
       const primaryType = (p.primaryType || "").toLowerCase();
-      const businessStatus = ((p as { businessStatus?: string }).businessStatus || "").toUpperCase();
-      const rating = p.rating ?? 5; // default high if no rating
-      const userRatingCount = (p as { userRatingCount?: number }).userRatingCount ?? 100; // default high if unknown
 
-      // 1. Exclude closed businesses
-      if (businessStatus === "CLOSED_TEMPORARILY" || businessStatus === "CLOSED_PERMANENTLY") {
-        return false;
-      }
-
-      // 2. Exclude low-rated places with few reviews
-      if (rating < 3.5 && userRatingCount < 5) {
-        return false;
-      }
-
-      // 3. Exclude if name contains "LLC" or "Inc" (unless known chain)
+      // Exclude if name contains "LLC" or "Inc" (unless known chain)
       if (/\b(llc|inc\.?|incorporated)\b/i.test(name) && !isKnownChain(name)) {
         return false;
       }
 
-      // 4. Exclude tailor/alteration services
+      // Exclude tailor/alteration services
       if (primaryType === "tailor" || primaryType === "clothing_alteration_service") {
         return false;
       }
 
-      // 5. Keep existing chain deny patterns
+      // Existing chain deny patterns
       if (CLOTHING_CHAIN_DENY.test(name)) {
         return false;
       }
@@ -171,50 +200,27 @@ export class FilterService {
     ]);
 
     return raw.filter((p: PlacesNewPlace) => {
-      const name =
-        typeof p.displayName === "string"
-          ? p.displayName
-          : p.displayName?.text || "";
+      // Global checks
+      if (this.isClosed(p)) return false;
+      if (this.isLowQuality(p)) return false;
+
+      const name = this.getName(p);
       const primaryType = (p.primaryType || "").toLowerCase();
       const types = (p.types || []).map((t: string) => t.toLowerCase());
-      const businessStatus = ((p as { businessStatus?: string }).businessStatus || "").toUpperCase();
-      const rating = p.rating ?? 5;
-      const userRatingCount = (p as { userRatingCount?: number }).userRatingCount ?? 100;
 
-      // 1. Exclude closed businesses
-      if (businessStatus === "CLOSED_TEMPORARILY" || businessStatus === "CLOSED_PERMANENTLY") {
-        return false;
-      }
-
-      // 2. Exclude low-rated places with few reviews OR no reviews at all
-      if (rating < 3.5 && userRatingCount < 5) {
-        return false;
-      }
-      if (userRatingCount === 0) {
-        return false;
-      }
-
-      // 3. Exclude unwanted types (check both primaryType and types array)
-      if (EXCLUDED_TYPES.has(primaryType)) {
-        return false;
-      }
+      // Exclude unwanted types (check both primaryType and types array)
+      if (EXCLUDED_TYPES.has(primaryType)) return false;
       for (const t of types) {
-        if (EXCLUDED_TYPES.has(t)) {
-          return false;
-        }
+        if (EXCLUDED_TYPES.has(t)) return false;
       }
 
-      // 4. Only include if primaryType or types contain "jewelry"
+      // Only include if primaryType or types contain "jewelry"
       const hasJewelryType = primaryType.includes("jewelry") ||
         types.some((t: string) => t.includes("jewelry"));
-      if (!hasJewelryType) {
-        return false;
-      }
+      if (!hasJewelryType) return false;
 
-      // 5. Existing chain deny patterns
-      if (JEWELRY_CHAIN_DENY.test(name)) {
-        return false;
-      }
+      // Existing chain deny patterns
+      if (JEWELRY_CHAIN_DENY.test(name)) return false;
 
       return true;
     });
@@ -222,10 +228,11 @@ export class FilterService {
 
   static filterPrintShip(raw: PlacesNewPlace[]): PlacesNewPlace[] {
     return raw.filter((p: PlacesNewPlace) => {
-      const name =
-        typeof p.displayName === "string"
-          ? p.displayName
-          : p.displayName?.text || "";
+      // Global checks
+      if (this.isClosed(p)) return false;
+      if (this.isLowQuality(p)) return false;
+
+      const name = this.getName(p);
       return !PRINT_SHIP_DENY.test(name);
     });
   }
@@ -319,21 +326,18 @@ export class FilterService {
     ]);
 
     return raw.filter((p: PlacesNewPlace) => {
-      const name =
-        typeof p.displayName === "string"
-          ? p.displayName
-          : p.displayName?.text || "";
+      // Global checks
+      if (this.isClosed(p)) return false;
+      if (this.isLowQuality(p)) return false;
+
+      const name = this.getName(p);
       const primaryType = (p.primaryType || "").toLowerCase();
-      const rating = p.rating ?? 5; // default to 5 if no rating (don't exclude)
 
       // Exclude chain stores
       if (SPECIALTY_MARKETS_DENY.test(name)) return false;
 
       // Exclude unwanted primaryTypes
       if (excludedPrimaryTypes.has(primaryType)) return false;
-
-      // Exclude low-rated places (likely closed/fake)
-      if (rating < 3.0) return false;
 
       return true;
     });
@@ -356,10 +360,11 @@ export class FilterService {
     // Filter out venue-type results (stadiums, arenas, etc.)
     // UNLESS primaryType is a bar-related type
     const filtered = raw.filter((p: PlacesNewPlace) => {
-      const name =
-        typeof p.displayName === "string"
-          ? p.displayName
-          : p.displayName?.text || "";
+      // Global checks
+      if (this.isClosed(p)) return false;
+      if (this.isLowQuality(p)) return false;
+
+      const name = this.getName(p);
       const pt = (p.primaryType || "").toLowerCase();
 
       // Allow if primaryType is any bar type, even if name matches venue pattern
@@ -462,10 +467,11 @@ export class FilterService {
     };
 
     return raw.filter((p: PlacesNewPlace) => {
-      const name =
-        typeof p.displayName === "string"
-          ? p.displayName
-          : p.displayName?.text || "";
+      // Global checks
+      if (this.isClosed(p)) return false;
+      if (this.isLowQuality(p)) return false;
+
+      const name = this.getName(p);
       const address = p.formattedAddress || "";
       const primaryType = (p.primaryType || "").toLowerCase();
       const types = (p.types || []).map((t: string) => t.toLowerCase());
@@ -506,14 +512,13 @@ export class FilterService {
         "spa",
       ]);
 
-      const nameLower = name.toLowerCase();
       const hasLiquorKeyword =
-        nameLower.includes("liquor") ||
-        nameLower.includes("wine") ||
-        nameLower.includes("spirits") ||
-        nameLower.includes("beverage") ||
-        nameLower.includes("package store") ||
-        nameLower.includes("bottle");
+        name.toLowerCase().includes("liquor") ||
+        name.toLowerCase().includes("wine") ||
+        name.toLowerCase().includes("spirits") ||
+        name.toLowerCase().includes("beverage") ||
+        name.toLowerCase().includes("package store") ||
+        name.toLowerCase().includes("bottle");
 
       // If no primaryType or not a liquor store, require liquor keywords in name
       if (!primaryType || primaryType === "") {
@@ -526,7 +531,7 @@ export class FilterService {
       }
 
       // Exclude advisor/consultant/license businesses
-      if (/\b(advisor|consultant|license|licensing|attorney|lawyer)\b/i.test(nameLower)) {
+      if (/\b(advisor|consultant|license|licensing|attorney|lawyer)\b/i.test(name)) {
         return false;
       }
 
