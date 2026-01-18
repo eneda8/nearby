@@ -382,6 +382,8 @@ export const JEWELRY_CHAIN_DENY = new RegExp(
     "station",
     "convenience",
     "7\\s?-?\\s?eleven",
+    "works",
+    "technology",
   ].join("|"),
   "i"
 );

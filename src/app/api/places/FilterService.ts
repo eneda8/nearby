@@ -159,12 +159,64 @@ export class FilterService {
   }
 
   static filterJewelry(raw: PlacesNewPlace[]): PlacesNewPlace[] {
+    const EXCLUDED_TYPES = new Set([
+      "wholesaler",
+      "body_art_service",
+      "tattoo_shop",
+      "piercing_shop",
+      "beauty_salon",
+      "hair_salon",
+      "nail_salon",
+      "spa",
+    ]);
+
     return raw.filter((p: PlacesNewPlace) => {
       const name =
         typeof p.displayName === "string"
           ? p.displayName
           : p.displayName?.text || "";
-      return !JEWELRY_CHAIN_DENY.test(name);
+      const primaryType = (p.primaryType || "").toLowerCase();
+      const types = (p.types || []).map((t: string) => t.toLowerCase());
+      const businessStatus = ((p as { businessStatus?: string }).businessStatus || "").toUpperCase();
+      const rating = p.rating ?? 5;
+      const userRatingCount = (p as { userRatingCount?: number }).userRatingCount ?? 100;
+
+      // 1. Exclude closed businesses
+      if (businessStatus === "CLOSED_TEMPORARILY" || businessStatus === "CLOSED_PERMANENTLY") {
+        return false;
+      }
+
+      // 2. Exclude low-rated places with few reviews OR no reviews at all
+      if (rating < 3.5 && userRatingCount < 5) {
+        return false;
+      }
+      if (userRatingCount === 0) {
+        return false;
+      }
+
+      // 3. Exclude unwanted types (check both primaryType and types array)
+      if (EXCLUDED_TYPES.has(primaryType)) {
+        return false;
+      }
+      for (const t of types) {
+        if (EXCLUDED_TYPES.has(t)) {
+          return false;
+        }
+      }
+
+      // 4. Only include if primaryType or types contain "jewelry"
+      const hasJewelryType = primaryType.includes("jewelry") ||
+        types.some((t: string) => t.includes("jewelry"));
+      if (!hasJewelryType) {
+        return false;
+      }
+
+      // 5. Existing chain deny patterns
+      if (JEWELRY_CHAIN_DENY.test(name)) {
+        return false;
+      }
+
+      return true;
     });
   }
 

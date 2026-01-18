@@ -103,7 +103,7 @@ export async function POST(req: NextRequest) {
       category = "clothing_store";
     } else if (
       includedTypes.length === 1 &&
-      includedTypes[0] === "jewelry_and_accessories"
+      includedTypes[0] === "jewelry_store"
     ) {
       category = "jewelry";
     } else if (
@@ -156,7 +156,7 @@ export async function POST(req: NextRequest) {
       },
       jewelry: async ({ lat, lng, radiusMeters }) => {
         const nearbyBody = {
-          includedTypes: ["jewelry_and_accessories"],
+          includedTypes: ["jewelry_store"],
           maxResultCount: 20,
           locationRestriction: makeLocationRestriction(lat, lng, radiusMeters),
         };
