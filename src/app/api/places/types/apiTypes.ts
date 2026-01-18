@@ -70,6 +70,8 @@ export type GooglePlacesRaw = {
   websiteUri?: string;
   directDistanceMeters?: number;
   rating?: number; // Star rating (0-5)
+  userRatingCount?: number; // Number of user ratings
+  businessStatus?: string; // OPERATIONAL, CLOSED_TEMPORARILY, CLOSED_PERMANENTLY
   openNow?: boolean; // Is the place open now?
   currentOpeningHours?: PlaceOpeningHours;
 };

@@ -12,6 +12,8 @@ const FIELD_MASK = [
   "places.googleMapsUri",
   "places.websiteUri",
   "places.rating",
+  "places.userRatingCount",
+  "places.businessStatus",
   "places.currentOpeningHours",
 ].join(",");
 

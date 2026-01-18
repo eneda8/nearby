@@ -68,12 +68,93 @@ export class FilterService {
   }
 
   static filterClothing(raw: PlacesNewPlace[]): PlacesNewPlace[] {
+    // Known clothing chains that might have "LLC" or "Inc" in their official name
+    const KNOWN_CHAINS = new Set([
+      "gap",
+      "old navy",
+      "banana republic",
+      "h&m",
+      "zara",
+      "uniqlo",
+      "forever 21",
+      "urban outfitters",
+      "anthropologie",
+      "free people",
+      "j.crew",
+      "j crew",
+      "express",
+      "american eagle",
+      "aerie",
+      "abercrombie",
+      "hollister",
+      "pacsun",
+      "zumiez",
+      "hot topic",
+      "torrid",
+      "lane bryant",
+      "chico's",
+      "ann taylor",
+      "loft",
+      "talbots",
+      "nordstrom",
+      "macy's",
+      "dillard's",
+      "kohl's",
+      "jcpenney",
+      "burlington",
+      "ross",
+      "tj maxx",
+      "tjmaxx",
+      "marshalls",
+      "homegoods",
+      "primark",
+    ]);
+
+    const isKnownChain = (name: string): boolean => {
+      const lower = name.toLowerCase();
+      for (const chain of KNOWN_CHAINS) {
+        if (lower.includes(chain)) return true;
+      }
+      return false;
+    };
+
     return raw.filter((p: PlacesNewPlace) => {
       const name =
         typeof p.displayName === "string"
           ? p.displayName
           : p.displayName?.text || "";
-      return !CLOTHING_CHAIN_DENY.test(name);
+      const nameLower = name.toLowerCase();
+      const primaryType = (p.primaryType || "").toLowerCase();
+      const businessStatus = ((p as { businessStatus?: string }).businessStatus || "").toUpperCase();
+      const rating = p.rating ?? 5; // default high if no rating
+      const userRatingCount = (p as { userRatingCount?: number }).userRatingCount ?? 100; // default high if unknown
+
+      // 1. Exclude closed businesses
+      if (businessStatus === "CLOSED_TEMPORARILY" || businessStatus === "CLOSED_PERMANENTLY") {
+        return false;
+      }
+
+      // 2. Exclude low-rated places with few reviews
+      if (rating < 3.5 && userRatingCount < 5) {
+        return false;
+      }
+
+      // 3. Exclude if name contains "LLC" or "Inc" (unless known chain)
+      if (/\b(llc|inc\.?|incorporated)\b/i.test(name) && !isKnownChain(name)) {
+        return false;
+      }
+
+      // 4. Exclude tailor/alteration services
+      if (primaryType === "tailor" || primaryType === "clothing_alteration_service") {
+        return false;
+      }
+
+      // 5. Keep existing chain deny patterns
+      if (CLOTHING_CHAIN_DENY.test(name)) {
+        return false;
+      }
+
+      return true;
     });
   }
 
