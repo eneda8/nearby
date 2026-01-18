@@ -29,6 +29,7 @@ import { getWarehouseClubsPlaces } from "./services/WarehouseClubsService";
 import { getDiscountThriftPlaces } from "./services/DiscountThriftService";
 import { FilterService } from "./FilterService";
 import { getAttractionsPlaces } from "./services/AttractionsService";
+import { getArtsAndCulturePlaces } from "./services/ArtsAndCultureService";
 import {
   validateRequestBody,
   shapePlacesResponse,
@@ -122,6 +123,8 @@ export async function POST(req: NextRequest) {
       category = "discount_thrift";
     } else if (hasAnyType(includedTypes, ["tourist_attraction", "museum", "historical_place"])) {
       category = "attractions";
+    } else if (hasAnyType(includedTypes, ["art_gallery", "performing_arts_theater", "concert_hall", "cultural_center"])) {
+      category = "arts_culture";
     } else {
       category = "default";
     }
@@ -185,6 +188,8 @@ export async function POST(req: NextRequest) {
         getDiscountThriftPlaces(lat, lng, radiusMeters),
       attractions: async ({ lat, lng, radiusMeters }) =>
         getAttractionsPlaces(lat, lng, radiusMeters),
+      arts_culture: async ({ lat, lng, radiusMeters }) =>
+        getArtsAndCulturePlaces(lat, lng, radiusMeters),
       default: async ({ lat, lng, radiusMeters, includedTypes }) => {
         const nearbyBody = {
           includedTypes: includedTypes ?? [],
@@ -216,7 +221,7 @@ export async function POST(req: NextRequest) {
 
     // --- Response shaping ---
     // Preserve tier-based order for categories with custom sorting
-    const preserveOrder = category === "bar" || category === "attractions";
+    const preserveOrder = category === "bar" || category === "attractions" || category === "arts_culture";
     const placesShaped: PlaceResponseItem[] = shapePlacesResponse(
       filtered,
       { lat, lng },

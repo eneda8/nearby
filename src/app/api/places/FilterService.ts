@@ -629,4 +629,45 @@ export class FilterService {
       return getRank(ptA) - getRank(ptB);
     });
   }
+
+  static filterArtsAndCulture(raw: PlacesNewPlace[]): PlacesNewPlace[] {
+    // Valid arts & culture primaryTypes
+    const VALID_PRIMARY_TYPES = new Set([
+      "art_gallery",
+      "museum",
+      "performing_arts_theater",
+      "concert_hall",
+      "cultural_center",
+      "theater",
+      "movie_theater",
+      "community_center",
+    ]);
+
+    const filtered = raw.filter((p: PlacesNewPlace) => {
+      // Global checks
+      if (this.isClosed(p)) return false;
+      if (this.isLowQuality(p)) return false;
+
+      const primaryType = (p.primaryType || "").toLowerCase();
+
+      // Only include valid arts & culture types
+      if (!VALID_PRIMARY_TYPES.has(primaryType)) return false;
+
+      return true;
+    });
+
+    // Sort: museums and galleries first, then theaters
+    return filtered.sort((a, b) => {
+      const ptA = (a.primaryType || "").toLowerCase();
+      const ptB = (b.primaryType || "").toLowerCase();
+
+      const getRank = (pt: string): number => {
+        if (pt === "museum" || pt === "art_gallery") return 0;
+        if (pt === "performing_arts_theater" || pt === "concert_hall" || pt === "theater") return 1;
+        return 2;
+      };
+
+      return getRank(ptA) - getRank(ptB);
+    });
+  }
 }
