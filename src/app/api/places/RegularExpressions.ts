@@ -396,6 +396,17 @@ export const PRINT_SHIP_DENY = new RegExp(
   "i"
 );
 
+export const BAR_VENUE_DENY = new RegExp(
+  [
+    "stadium",
+    "arena",
+    "center",
+    "centre",
+    "venue",
+  ].join("|"),
+  "i"
+);
+
 export const SPECIALTY_MARKETS_DENY = new RegExp(
   [
     "market\\s*basket",

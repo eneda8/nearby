@@ -60,41 +60,45 @@ export const extractPosition = (location?: PlaceLocation) => {
 export function shapePlacesResponse(
   places: GooglePlacesRaw[],
   origin: { lat: number; lng: number },
-  maxResults: number = 20
+  maxResults: number = 20,
+  preserveOrder: boolean = false
 ): PlaceResponseItem[] {
-  return places
-    .map((p: GooglePlacesRaw): PlaceResponseItem => {
-      const { lat, lng } = extractPosition(p.location);
-      const position = {
-        lat: typeof lat === "number" ? lat : 0,
-        lng: typeof lng === "number" ? lng : 0,
-      };
+  const mapped = places.map((p: GooglePlacesRaw): PlaceResponseItem => {
+    const { lat, lng } = extractPosition(p.location);
+    const position = {
+      lat: typeof lat === "number" ? lat : 0,
+      lng: typeof lng === "number" ? lng : 0,
+    };
 
-      const currentOpeningHours = p.currentOpeningHours as PlaceOpeningHours | undefined;
+    const currentOpeningHours = p.currentOpeningHours as PlaceOpeningHours | undefined;
 
-      return {
-        id: p.id,
-        name:
-          typeof p.displayName === "string"
-            ? p.displayName
-            : p.displayName?.text ?? "Unknown",
-        address: p.formattedAddress ?? "",
-        primaryType: p.primaryType ?? "",
-        types: p.types ?? [],
-        googleMapsUri: p.googleMapsUri ?? "",
-        websiteUri: p.websiteUri ?? undefined,
-        location: position,
-        directDistanceMeters:
-          p.directDistanceMeters !== undefined
-            ? p.directDistanceMeters
-            : haversineMeters(origin, position),
-        rating: p.rating ?? undefined,
-        openNow: p.currentOpeningHours?.openNow ?? undefined,
-        currentOpeningHours,
-      };
-    })
-    .sort(
+    return {
+      id: p.id,
+      name:
+        typeof p.displayName === "string"
+          ? p.displayName
+          : p.displayName?.text ?? "Unknown",
+      address: p.formattedAddress ?? "",
+      primaryType: p.primaryType ?? "",
+      types: p.types ?? [],
+      googleMapsUri: p.googleMapsUri ?? "",
+      websiteUri: p.websiteUri ?? undefined,
+      location: position,
+      directDistanceMeters:
+        p.directDistanceMeters !== undefined
+          ? p.directDistanceMeters
+          : haversineMeters(origin, position),
+      rating: p.rating ?? undefined,
+      openNow: p.currentOpeningHours?.openNow ?? undefined,
+      currentOpeningHours,
+    };
+  });
+
+  if (!preserveOrder) {
+    mapped.sort(
       (a, b) => (a.directDistanceMeters ?? 0) - (b.directDistanceMeters ?? 0)
-    )
-    .slice(0, maxResults);
+    );
+  }
+
+  return mapped.slice(0, maxResults);
 }

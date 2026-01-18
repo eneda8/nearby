@@ -8,10 +8,13 @@ import {
   JEWELRY_CHAIN_DENY,
   PRINT_SHIP_DENY,
   SPECIALTY_MARKETS_DENY,
+  BAR_VENUE_DENY,
   CONVENIENCE_WORDS,
   SPECIALTY_CUES,
   NON_ASCII,
 } from "./RegularExpressions";
+import { haversineMeters } from "./lib/haversineMeters";
+import { extractPosition } from "./lib/requestResponseUtils";
 import type { PlacesNewPlace } from "./route";
 
 export class FilterService {
@@ -200,6 +203,85 @@ export class FilterService {
       if (rating < 3.0) return false;
 
       return true;
+    });
+  }
+
+  static filterBar(
+    raw: PlacesNewPlace[],
+    origin: { lat: number; lng: number }
+  ): PlacesNewPlace[] {
+    const PRIMARY_BAR_TYPES = new Set(["bar", "cocktail_bar", "night_club"]);
+    const ALL_BAR_TYPES = new Set([
+      "bar",
+      "cocktail_bar",
+      "night_club",
+      "pub",
+      "wine_bar",
+      "sports_bar",
+    ]);
+
+    // Filter out venue-type results (stadiums, arenas, etc.)
+    // UNLESS primaryType is a bar-related type
+    const filtered = raw.filter((p: PlacesNewPlace) => {
+      const name =
+        typeof p.displayName === "string"
+          ? p.displayName
+          : p.displayName?.text || "";
+      const pt = (p.primaryType || "").toLowerCase();
+
+      // Allow if primaryType is any bar type, even if name matches venue pattern
+      if (ALL_BAR_TYPES.has(pt)) return true;
+
+      // Exclude venue-type results
+      return !BAR_VENUE_DENY.test(name);
+    });
+
+    // Assign ranking tiers:
+    // Tier 0: primaryType bar/cocktail_bar/night_club WITHOUT restaurant in types (pure bars)
+    // Tier 1: primaryType bar/cocktail_bar/night_club WITH restaurant, OR other bar types without restaurant
+    // Tier 2: any place with restaurant in types that isn't tier 0 or 1
+    const getRankTier = (p: PlacesNewPlace): number => {
+      const pt = (p.primaryType || "").toLowerCase();
+      const types = (p.types || []).map((t: string) => t.toLowerCase());
+      const hasRestaurant = types.includes("restaurant");
+
+      // Pure bars (no restaurant) get highest priority
+      if (PRIMARY_BAR_TYPES.has(pt) && !hasRestaurant) return 0;
+      // Bars with restaurant, or other bar types without restaurant
+      if (PRIMARY_BAR_TYPES.has(pt) || ALL_BAR_TYPES.has(pt)) return 1;
+      // Everything else with restaurant is deprioritized
+      if (hasRestaurant) return 2;
+      return 1;
+    };
+
+    // Sort by tier first, then by distance within each tier
+    return filtered.sort((a, b) => {
+      const tierA = getRankTier(a);
+      const tierB = getRankTier(b);
+
+      if (tierA !== tierB) return tierA - tierB;
+
+      // Within same tier, sort by distance
+      const posA = extractPosition(a.location);
+      const posB = extractPosition(b.location);
+
+      const aValid =
+        typeof posA.lat === "number" && typeof posA.lng === "number";
+      const bValid =
+        typeof posB.lat === "number" && typeof posB.lng === "number";
+
+      if (!aValid) return 1;
+      if (!bValid) return -1;
+
+      const distA = haversineMeters(origin, {
+        lat: posA.lat as number,
+        lng: posA.lng as number,
+      });
+      const distB = haversineMeters(origin, {
+        lat: posB.lat as number,
+        lng: posB.lng as number,
+      });
+      return distA - distB;
     });
   }
 }

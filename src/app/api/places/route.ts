@@ -23,6 +23,7 @@ import { getClothingPlaces } from "./services/ClothingService";
 import { getJewelryPlaces } from "./services/JewelryService";
 import { getSpecialtyMarketsPlaces } from "./services/SpecialtyMarketsService";
 import { getPrintShipPlaces } from "./services/PrintShipService";
+import { getBarPlaces } from "./services/BarService";
 import {
   validateRequestBody,
   shapePlacesResponse,
@@ -104,6 +105,10 @@ export async function POST(req: NextRequest) {
       includedTypes[0] === "jewelry_and_accessories"
     ) {
       category = "jewelry";
+    } else if (
+      hasAnyType(includedTypes, ["bar", "pub", "wine_bar", "cocktail_bar", "sports_bar"])
+    ) {
+      category = "bar";
     } else {
       category = "default";
     }
@@ -157,6 +162,8 @@ export async function POST(req: NextRequest) {
         const raw = Array.isArray(data?.places) ? data.places : [];
         return getJewelryPlaces(raw);
       },
+      bar: async ({ lat, lng, radiusMeters }) =>
+        getBarPlaces(lat, lng, radiusMeters),
       default: async ({ lat, lng, radiusMeters, includedTypes }) => {
         const nearbyBody = {
           includedTypes: includedTypes ?? [],
@@ -187,10 +194,13 @@ export async function POST(req: NextRequest) {
     logCategory(`[${category}] filtered:`, filtered);
 
     // --- Response shaping ---
+    // Preserve tier-based order for bar category (bars first, then pubs, then restaurant-bars)
+    const preserveOrder = category === "bar";
     const placesShaped: PlaceResponseItem[] = shapePlacesResponse(
       filtered,
       { lat, lng },
-      20
+      20,
+      preserveOrder
     );
 
     const response: PlacesApiResponse = {
