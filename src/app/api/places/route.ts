@@ -30,6 +30,7 @@ import { getDiscountThriftPlaces } from "./services/DiscountThriftService";
 import { FilterService } from "./FilterService";
 import { getAttractionsPlaces } from "./services/AttractionsService";
 import { getArtsAndCulturePlaces } from "./services/ArtsAndCultureService";
+import { getSportsPlaces } from "./services/SportsService";
 import {
   validateRequestBody,
   shapePlacesResponse,
@@ -125,6 +126,8 @@ export async function POST(req: NextRequest) {
       category = "attractions";
     } else if (hasAnyType(includedTypes, ["art_gallery", "performing_arts_theater", "concert_hall", "cultural_center"])) {
       category = "arts_culture";
+    } else if (hasAnyType(includedTypes, ["gym", "fitness_center", "golf_course", "stadium", "sports_complex"])) {
+      category = "sports";
     } else {
       category = "default";
     }
@@ -190,6 +193,8 @@ export async function POST(req: NextRequest) {
         getAttractionsPlaces(lat, lng, radiusMeters),
       arts_culture: async ({ lat, lng, radiusMeters }) =>
         getArtsAndCulturePlaces(lat, lng, radiusMeters),
+      sports: async ({ lat, lng, radiusMeters }) =>
+        getSportsPlaces(lat, lng, radiusMeters),
       default: async ({ lat, lng, radiusMeters, includedTypes }) => {
         const nearbyBody = {
           includedTypes: includedTypes ?? [],

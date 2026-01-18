@@ -670,4 +670,48 @@ export class FilterService {
       return getRank(ptA) - getRank(ptB);
     });
   }
+
+  static filterSports(raw: PlacesNewPlace[]): PlacesNewPlace[] {
+    // Valid sports/fitness primaryTypes
+    const VALID_PRIMARY_TYPES = new Set([
+      "gym",
+      "fitness_center",
+      "sports_club",
+      "sports_complex",
+      "golf_course",
+      "stadium",
+      "swimming_pool",
+      "tennis_court",
+      "basketball_court",
+      "athletic_field",
+      "skating_rink",
+      "bowling_alley",
+      "yoga_studio",
+      "martial_arts_school",
+      "dance_school",
+    ]);
+
+    // Exclude entertainment restaurants that look like sports venues
+    const ENTERTAINMENT_DENY = /\b(dave\s*&?\s*buster|dave\s*and\s*buster|main\s*event|round\s*1|round\s*one|chuck\s*e\.?\s*cheese|topgolf)\b/i;
+
+    return raw.filter((p: PlacesNewPlace) => {
+      // Global checks
+      if (this.isClosed(p)) return false;
+      if (this.isLowQuality(p)) return false;
+
+      const name = this.getName(p);
+      const primaryType = (p.primaryType || "").toLowerCase();
+
+      // Exclude restaurants
+      if (primaryType === "restaurant" || primaryType === "bar") return false;
+
+      // Exclude entertainment restaurants
+      if (ENTERTAINMENT_DENY.test(name)) return false;
+
+      // Only include valid sports/fitness types
+      if (!VALID_PRIMARY_TYPES.has(primaryType)) return false;
+
+      return true;
+    });
+  }
 }
