@@ -82,7 +82,6 @@ export const CATEGORIES: CatMap = [
       { key: 'department', label: 'Department Stores', types: ['department_store'] },
       { key: 'discount', label: 'Discount & Thrift Stores', types: ['discount_store', 'thrift_store', 'variety_store', 'other_store'] },
       { key: 'warehouse_clubs', label: 'Warehouse Clubs', types: ['warehouse_store', 'wholesale_store'] },
-      { key: 'office', label: 'Office & School', types: ['office_supply_store', 'stationery_store'] },
       { key: 'electronics', label: 'Electronics', types: ['electronics_store', 'cell_phone_store', 'computer_store'] },
       { key: 'home', label: 'Home & Housewares', types: ['home_goods_store', 'home_improvement_store', 'furniture_store', 'hardware_store', 'appliance_store'] },
       { key: 'books_gifts', label: 'Books & Gifts', types: ['book_store', 'gift_shop', 'toy_store', 'card_store'] },
