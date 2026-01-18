@@ -188,7 +188,8 @@ export class FilterService {
   }
 
   static filterJewelry(raw: PlacesNewPlace[]): PlacesNewPlace[] {
-    const EXCLUDED_TYPES = new Set([
+    // Exclude these primaryTypes - they may have jewelry_store in types but aren't jewelry stores
+    const EXCLUDED_PRIMARY_TYPES = new Set([
       "wholesaler",
       "body_art_service",
       "tattoo_shop",
@@ -197,7 +198,21 @@ export class FilterService {
       "hair_salon",
       "nail_salon",
       "spa",
+      "home_goods_store",
+      "department_store",
+      "clothing_store",
+      "discount_store",
+      "thrift_store",
+      "consignment_shop",
+      "antique_store",
+      "gift_shop",
+      "variety_store",
+      "supermarket",
+      "grocery_store",
     ]);
+
+    // Stores that sell jewelry but aren't jewelry stores
+    const STORE_NAME_DENY = /\b(homegoods|home\s*goods|tj\s*maxx|tjmaxx|t\.?j\.?\s*maxx|marshalls|ross|burlington|nordstrom\s*rack|consignment|llc|inc\.?|incorporated)\b/i;
 
     return raw.filter((p: PlacesNewPlace) => {
       // Global checks
@@ -206,21 +221,19 @@ export class FilterService {
 
       const name = this.getName(p);
       const primaryType = (p.primaryType || "").toLowerCase();
-      const types = (p.types || []).map((t: string) => t.toLowerCase());
 
-      // Exclude unwanted types (check both primaryType and types array)
-      if (EXCLUDED_TYPES.has(primaryType)) return false;
-      for (const t of types) {
-        if (EXCLUDED_TYPES.has(t)) return false;
-      }
+      // Exclude unwanted primaryTypes
+      if (EXCLUDED_PRIMARY_TYPES.has(primaryType)) return false;
 
-      // Only include if primaryType or types contain "jewelry"
-      const hasJewelryType = primaryType.includes("jewelry") ||
-        types.some((t: string) => t.includes("jewelry"));
-      if (!hasJewelryType) return false;
+      // STRICT: primaryType must contain "jewelry" (not just in types array)
+      // This ensures we get actual jewelry stores, not dept stores with jewelry sections
+      if (!primaryType.includes("jewelry")) return false;
 
       // Existing chain deny patterns
       if (JEWELRY_CHAIN_DENY.test(name)) return false;
+
+      // Additional store name deny patterns
+      if (STORE_NAME_DENY.test(name)) return false;
 
       return true;
     });
