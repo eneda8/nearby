@@ -168,6 +168,7 @@ function HomePageContent() {
 
   // Open now toggle - default OFF in development, ON in production
   const [openNowOnly, setOpenNowOnly] = useState(process.env.NODE_ENV !== 'development');
+  const [sortBy, setSortBy] = useState<'distance' | 'rating' | 'reviews'>('distance');
   const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const selectedTokens = useMemo(() => {
@@ -198,11 +199,19 @@ function HomePageContent() {
     return () => mq.removeListener(update);
   }, []);
 
-  // Filtered places based on openNowOnly
-  const filteredPlaces = useMemo(
-    () => (openNowOnly ? places.filter((p) => p.openNow) : places),
-    [places, openNowOnly]
-  );
+  // Filtered and sorted places
+  const filteredPlaces = useMemo(() => {
+    let result = openNowOnly ? places.filter((p) => p.openNow) : [...places];
+
+    if (sortBy === 'rating') {
+      result = [...result].sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0));
+    } else if (sortBy === 'reviews') {
+      result = [...result].sort((a, b) => (b.userRatingCount ?? 0) - (a.userRatingCount ?? 0));
+    }
+    // 'distance' is already the default sort from fetch
+
+    return result;
+  }, [places, openNowOnly, sortBy]);
 
   const pinnedList = useMemo(() => Object.values(pinnedPlaces), [pinnedPlaces]);
   const pinnedIds = useMemo(() => new Set(pinnedList.map((p) => p.id)), [pinnedList]);
@@ -330,6 +339,7 @@ function HomePageContent() {
     setCenter(DEFAULT_CENTER);
     setRadiusMeters(1609.344);
     setOpenNowOnly(true);
+    setSortBy('distance');
     setError(null);
     setLoading(false);
     setShowMobileFilters(false);
@@ -698,6 +708,17 @@ function HomePageContent() {
                 )}
               </div>
               <div className="flex items-center gap-2">
+                {resultsCount > 0 && (
+                  <select
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value as 'distance' | 'rating' | 'reviews')}
+                    className="rounded-full border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 shadow-sm focus:border-slate-300 focus:outline-none"
+                  >
+                    <option value="distance">Distance</option>
+                    <option value="rating">Rating</option>
+                    <option value="reviews">Reviews</option>
+                  </select>
+                )}
                 <button
                   type="button"
                   onClick={() => setShowMobileFilters((prev) => !prev)}
@@ -788,6 +809,17 @@ function HomePageContent() {
                 >
                   Clear pins
                 </button>
+              )}
+              {resultsCount > 0 && (
+                <select
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value as 'distance' | 'rating' | 'reviews')}
+                  className="rounded-full border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 shadow-sm focus:border-slate-300 focus:outline-none"
+                >
+                  <option value="distance">Sort by distance</option>
+                  <option value="rating">Sort by rating</option>
+                  <option value="reviews">Sort by reviews</option>
+                </select>
               )}
             </div>
             <div className="flex items-center gap-2">

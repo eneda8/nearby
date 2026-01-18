@@ -129,7 +129,12 @@ export default function ResultsList({
                   {typeof p.rating === 'number' && (
                     <span className="flex items-center gap-1 font-medium text-slate-600">
                       <FaStar className="h-3 w-3 text-yellow-500" />
-                      <span className="text-yellow-700">{p.rating.toFixed(1)}</span>
+                      <span className="text-yellow-700">
+                        {p.rating.toFixed(1)}
+                        {typeof p.userRatingCount === 'number' && (
+                          <span className="text-slate-500 font-normal"> ({p.userRatingCount.toLocaleString()})</span>
+                        )}
+                      </span>
                     </span>
                   )}
                   {typeof p.openNow === 'boolean' && (() => {

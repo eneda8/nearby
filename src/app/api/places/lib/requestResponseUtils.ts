@@ -89,6 +89,7 @@ export function shapePlacesResponse(
           ? p.directDistanceMeters
           : haversineMeters(origin, position),
       rating: p.rating ?? undefined,
+      userRatingCount: p.userRatingCount ?? undefined,
       openNow: p.currentOpeningHours?.openNow ?? undefined,
       currentOpeningHours,
     };

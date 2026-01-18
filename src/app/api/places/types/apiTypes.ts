@@ -45,6 +45,7 @@ export type PlaceResponseItem = {
   location: { lat: number; lng: number };
   directDistanceMeters: number | null;
   rating?: number; // Star rating (0-5)
+  userRatingCount?: number; // Number of user ratings
   openNow?: boolean; // Is the place open now?
   currentOpeningHours?: PlaceOpeningHours;
 };
